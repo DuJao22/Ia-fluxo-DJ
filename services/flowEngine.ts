@@ -109,13 +109,13 @@ export class FlowEngine {
                   let hint = "";
                   const lowerDetails = errorDetails.toLowerCase();
                   if (lowerDetails.includes("your_api_key") || lowerDetails.includes("sua_chave")) {
-                       hint = " 💡 DICA: O servidor recebeu um placeholder em vez de uma chave real.";
+                       hint = " 💡 DICA: O servidor recebeu um placeholder em vez de uma chave real. Configure sua API Key nas Configurações.";
                   } else if (lowerDetails.includes("incorrect api key") || lowerDetails.includes("api key not valid")) {
-                       hint = " 💡 DICA: A chave de API enviada foi rejeitada.";
+                       hint = " 💡 DICA: A chave de API enviada foi rejeitada. Verifique se ela está correta nas Configurações.";
                   } else if (lowerDetails.includes("provide an api key")) {
                        hint = " 💡 DICA: O header 'Authorization' ou parâmetro 'key' está ausente.";
                   } else if (response.status === 403) {
-                       hint = " 💡 DICA: Verifique se a 'Google Generative Language API' está ATIVADA no Google Cloud Console.";
+                       hint = " 💡 DICA: Verifique se a 'Google Generative Language API' está ATIVADA no Google Cloud Console ou se sua Chave API é válida.";
                   }
                   throw new Error(`AUTH_ERROR (${response.status}): ${errorDetails} ${hint}`);
               }
@@ -147,7 +147,8 @@ export class FlowEngine {
               if (e.name === 'AbortError') throw e; // Timeout real
               if (e.message.includes('GEMINI_404')) throw e; // Erro fatal de modelo, não adianta tentar proxy
               if (e.message.includes('AUTH_ERROR')) {
-                   this.addLog(createLog(nodeId, label, 'WARN', `⚠️ Direct falhou com Auth Error. Tentando proxies...`));
+                   // Se for erro de auth, não adianta tentar proxy, o erro é na chave ou permissão
+                   throw e;
               } else if (e.message.match(/Error 400|Error 404|Error 405|Error 422/)) {
                   throw e;
               } else {
@@ -166,7 +167,7 @@ export class FlowEngine {
               return data;
           } catch (e: any) {
              if (e.name === 'AbortError') throw e;
-             if (e.message.match(/Error 400|Error 404|Error 405|Error 422|GEMINI_404/)) throw e;
+             if (e.message.match(/Error 400|Error 404|Error 405|Error 422|GEMINI_404|AUTH_ERROR/)) throw e;
           }
 
           // 3. CODE TABS
@@ -180,7 +181,7 @@ export class FlowEngine {
               return data;
           } catch (e: any) {
                if (e.name === 'AbortError') throw e;
-               if (e.message.match(/Error 400|Error 404|Error 405|Error 422|GEMINI_404/)) throw e;
+               if (e.message.match(/Error 400|Error 404|Error 405|Error 422|GEMINI_404|AUTH_ERROR/)) throw e;
           }
 
           // 4. THING PROXY
@@ -194,7 +195,7 @@ export class FlowEngine {
               return data;
           } catch (e: any) {
                if (e.name === 'AbortError') throw e;
-               if (e.message.match(/Error 400|Error 404|Error 405|Error 422|GEMINI_404/)) throw e;
+               if (e.message.match(/Error 400|Error 404|Error 405|Error 422|GEMINI_404|AUTH_ERROR/)) throw e;
           }
 
           // 5. CORS ANYWHERE (ULTIMATE FALLBACK)
@@ -273,7 +274,8 @@ export class FlowEngine {
           const timeout = Number(config?.timeout) || 45000;
 
           // Recupera chave salva para uso em injeção automática e fallback
-          const storedKey = storageService.getApiKey() || process.env.API_KEY;
+          const rawKey = storageService.getApiKey() || process.env.API_KEY;
+          const storedKey = (rawKey && rawKey !== "undefined") ? rawKey : null;
 
           if (isGemini) {
              finalUrl = finalUrl.trim();
@@ -290,10 +292,15 @@ export class FlowEngine {
              const match = finalUrl.match(modelRegex);
              if (match) {
                  const currentModel = match[1];
-                 // If using legacy/broken models or simply not the standard 1.5-flash
-                 if (currentModel.includes('gemini-pro') || currentModel.includes('1.0')) {
-                     finalUrl = finalUrl.replace(modelRegex, 'models/gemini-2.0-flash');
-                     this.addLog(createLog(node.id, label, 'WARN', `✨ Auto-Fix: Modelo '${currentModel}' substituído por 'gemini-2.0-flash' para evitar 404.`));
+                 // If using legacy/broken models or simply not the standard gemini-3
+                 // This ensures we switch to 'gemini-3-flash-preview' if we detect 1.5, 1.0 or generic 'pro'
+                 if (currentModel.includes('gemini-pro') || currentModel.includes('1.0') || currentModel.includes('1.5') || currentModel.includes('preview')) {
+                     
+                     // Se não for especificamente o modelo 3, faz upgrade
+                     if (!currentModel.includes('gemini-3')) {
+                         finalUrl = finalUrl.replace(modelRegex, 'models/gemini-3-flash-preview');
+                         this.addLog(createLog(node.id, label, 'INFO', `✨ Auto-Fix: Modelo '${currentModel}' atualizado para 'gemini-3-flash-preview'.`));
+                     }
                  }
              }
              
@@ -339,6 +346,8 @@ export class FlowEngine {
                      finalUrl = `${finalUrl}${separator}key=${storedKey}`;
                      this.addLog(createLog(node.id, label, 'INFO', `🔑 Auto-Auth: Parâmetro ?key= adicionado.`));
                  }
+             } else {
+                 this.addLog(createLog(node.id, label, 'WARN', `⚠️ Nenhuma API Key detectada. Configure nas Configurações (⚙️) para evitar erros de permissão.`));
              }
           }
 
@@ -364,7 +373,7 @@ export class FlowEngine {
               // SELF-HEALING: Se falhar com erro de modelo (404) e for Gemini, tenta reconstruir a URL inteira para um fallback seguro
               // MAS NÃO para Timeout
               if (isGemini && (err.message.includes('GEMINI_404') || err.message.includes('404')) && !err.message.includes('Timeout')) {
-                   this.addLog(createLog(node.id, label, 'WARN', `🚑 Self-Healing Ativado: Erro 404 detectado. Forçando modelo gemini-2.0-flash...`));
+                   this.addLog(createLog(node.id, label, 'WARN', `🚑 Self-Healing Ativado: Erro 404 detectado. Forçando modelo gemini-3-flash-preview...`));
                    
                    // Tenta extrair a chave da URL original
                    const keyMatch = finalUrl.match(/[?&]key=([^&]+)/);
@@ -376,8 +385,8 @@ export class FlowEngine {
                    }
                    
                    if (apiKey) {
-                       // RECONSTRUÇÃO TOTAL DA URL PARA O MODELO ESTÁVEL 2.0
-                       const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                       // RECONSTRUÇÃO TOTAL DA URL PARA O MODELO ESTÁVEL gemini-3-flash-preview
+                       const fallbackUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
                        this.addLog(createLog(node.id, label, 'INFO', `🔄 Redirecionando para: ${fallbackUrl}`));
                        responseData = await this.fetchRealData(fallbackUrl, { method: 'POST', headers, body: bodyString }, node.id, label, timeout);
                    } else {

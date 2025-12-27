@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { SYSTEM_PROMPT } from '../constants';
 import { FlowSchema, FlowContext } from '../types';
 import { storageService } from './storageService';
@@ -6,11 +6,13 @@ import { storageService } from './storageService';
 export const generateFlowFromPrompt = async (userPrompt: string, context?: FlowContext): Promise<{ text: string, flowData?: FlowSchema }> => {
   const storedKey = storageService.getApiKey();
   const envKey = process.env.API_KEY;
-  const activeKey = storedKey || envKey;
-
-  if (!activeKey) {
+  
+  // Validação robusta da chave
+  let activeKey = storedKey || envKey;
+  // Limpeza de chaves inválidas que podem vir do ambiente
+  if (activeKey === "undefined" || activeKey === "null" || !activeKey || activeKey.trim() === "") {
     return { 
-      text: "⚠️ **Configuração Necessária**: Nenhuma API Key válida detectada. \n\nPara usar o Chat IA, clique no ícone de engrenagem (⚙️) e insira sua API Key do Google Gemini ou configure a variável de ambiente `API_KEY`.", 
+      text: "⚠️ **Configuração Necessária**\n\nPara a IA funcionar, você precisa de uma Chave de API do Google (Gemini).\n\n1. Clique no ícone de engrenagem (⚙️) no topo direito.\n2. Cole sua chave API (pegue uma gratuita no Google AI Studio).\n3. Tente novamente.", 
       flowData: undefined 
     };
   }
@@ -19,12 +21,10 @@ export const generateFlowFromPrompt = async (userPrompt: string, context?: FlowC
     const ai = new GoogleGenAI({ apiKey: activeKey });
     
     // Preparação do Contexto
-    let finalPromptParts = [{ text: SYSTEM_PROMPT }];
+    let finalPromptParts: any[] = [{ text: SYSTEM_PROMPT }];
 
     if (context) {
         const recentLogs = context.logs.slice(-15).map(l => `[${l.level}] ${l.nodeLabel}: ${l.message}`).join('\n');
-        
-        // Simplifica o fluxo atual para o prompt
         const simplifiedNodes = context.currentNodes.map(n => ({
             id: n.id,
             type: n.data.type,
@@ -33,114 +33,118 @@ export const generateFlowFromPrompt = async (userPrompt: string, context?: FlowC
         }));
 
         const contextString = `
-=== CONTEXTO DE DEBUG (O USUÁRIO ESTÁ VENDO ISSO) ===
-LOGS DE ERRO/EXECUÇÃO:
+=== CONTEXTO ATUAL (DEBUG) ===
+O usuário já tem este fluxo. Se ele pedir para corrigir, baseie-se nisso:
+LOGS:
 ${recentLogs || "Nenhum log disponível."}
 
-ESTRUTURA ATUAL:
+NODES ATUAIS:
 ${JSON.stringify(simplifiedNodes, null, 2)}
-=====================================================
+==============================
 `;
         finalPromptParts.push({ text: contextString });
     }
 
     finalPromptParts.push({ text: `USUÁRIO DIZ: ${userPrompt}` });
 
-    // Tenta modelos robustos, priorizando a série 3 para melhor lógica
-    const modelsToTry = ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-pro'];
-    let response;
-    let lastError: any = null;
+    // MODELO: gemini-3-flash-preview
+    // Atualizado para evitar erro 404 com modelos antigos/deprecados
+    const modelId = 'gemini-3-flash-preview';
 
-    for (const model of modelsToTry) {
-        try {
-            console.log(`[AI] Gerando com modelo: ${model}...`);
-            response = await ai.models.generateContent({
-                model: model,
-                contents: [{ role: 'user', parts: finalPromptParts }],
-                config: { 
-                    temperature: 0.2,
-                    // Aumenta token limit para evitar JSON cortado
-                    maxOutputTokens: 8000 
-                }
-            });
-            break;
-        } catch (e: any) {
-            lastError = e;
-            const msg = e.message || "";
-            // Ignora erros de modelo não encontrado ou indisponível e tenta o próximo
-            if (msg.includes('404') || msg.includes('NOT_FOUND') || msg.includes('403') || msg.includes('503')) {
-                continue;
-            }
-            // Se for outro erro, tenta o próximo anyway por segurança
-            continue; 
+    console.log(`[AI] Gerando com modelo: ${modelId}...`);
+
+    const response = await ai.models.generateContent({
+        model: modelId,
+        contents: [{ role: 'user', parts: finalPromptParts }],
+        config: { 
+            temperature: 0.1, // Criatividade baixa para garantir JSON válido
+            maxOutputTokens: 8192,
+            responseMimeType: 'application/json', // Força retorno JSON
+            // DESATIVA FILTROS DE SEGURANÇA para permitir geração de código/scripts
+            safetySettings: [
+                { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+                { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            ]
         }
-    }
+    });
 
-    if (!response && lastError) throw lastError;
-
-    const text = response?.text || "Não foi possível gerar uma resposta.";
+    const text = response?.text || "{}";
     let flowData: FlowSchema | undefined;
 
-    // --- PARSER DE JSON CIRÚRGICO ---
-    // A IA muitas vezes mistura texto explicativo com o JSON.
-    // Esta função procura o primeiro '{' e o último '}' para extrair o objeto principal.
-    
+    // --- PARSER DE JSON SUPER RESILIENTE ---
     try {
-        let jsonString = '';
+        let jsonString = text.trim();
         
-        // 1. Tenta extrair de blocos de código Markdown (mais seguro)
-        const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+        // Remove blocos de markdown ```json ... ``` se o modelo insistir em mandar
+        const jsonBlockMatch = jsonString.match(/```json\s*([\s\S]*?)\s*```/);
         if (jsonBlockMatch && jsonBlockMatch[1]) {
             jsonString = jsonBlockMatch[1];
-        } 
-        // 2. Se não achar bloco, tenta achar o objeto JSON bruto no texto
-        else {
-            const firstOpenBrace = text.indexOf('{');
-            const lastCloseBrace = text.lastIndexOf('}');
-            
-            if (firstOpenBrace !== -1 && lastCloseBrace !== -1 && lastCloseBrace > firstOpenBrace) {
-                jsonString = text.substring(firstOpenBrace, lastCloseBrace + 1);
-            }
+        } else {
+             // Tenta achar o primeiro { e o último }
+             const firstOpen = jsonString.indexOf('{');
+             const lastClose = jsonString.lastIndexOf('}');
+             if (firstOpen !== -1 && lastClose > firstOpen) {
+                 jsonString = jsonString.substring(firstOpen, lastClose + 1);
+             }
         }
 
-        if (jsonString) {
-            // Limpeza extra para JSONs sujos
-            jsonString = jsonString.replace(/\\n/g, "\\n")  
-                                   .replace(/\\'/g, "\\'")
-                                   .replace(/\\"/g, '\\"')
-                                   .replace(/\\&/g, "\\&")
-                                   .replace(/\\r/g, "\\r")
-                                   .replace(/\\t/g, "\\t")
-                                   .replace(/\\b/g, "\\b")
-                                   .replace(/\\f/g, "\\f");
-            // Remove caracteres de controle invisíveis que quebram JSON.parse
-            jsonString = jsonString.replace(/[\u0000-\u0019]+/g,""); 
-
-            const parsed = JSON.parse(jsonString);
-            
-            // Validação mínima para garantir que é um fluxo
-            if (parsed.nodes && Array.isArray(parsed.nodes)) {
-                flowData = parsed as FlowSchema;
-                console.log("Fluxo extraído com sucesso:", flowData.nodes.length, "nodes");
-            }
+        const parsed = JSON.parse(jsonString);
+        
+        // Validação mínima do schema
+        if (parsed.nodes && Array.isArray(parsed.nodes)) {
+            flowData = parsed as FlowSchema;
+        } else if (parsed.response && parsed.response.nodes) {
+            // Algumas vezes o modelo encapsula em um objeto "response"
+            flowData = parsed.response as FlowSchema;
         }
+
     } catch (e) {
-        console.error("Erro ao fazer parse do JSON gerado pela IA:", e);
-        // Não falha silenciosamente, o texto explicativo ainda será mostrado ao usuário
+        console.error("Erro ao processar JSON da IA:", e);
+        console.log("Conteúdo recebido:", text);
     }
 
-    return { text, flowData };
+    let displayText = text;
+    
+    if (flowData) {
+        const nodeCount = flowData.nodes.length;
+        displayText = `✅ **Fluxo Criado com Sucesso!**\n\nEntendi seu pedido. Gere um fluxo com **${nodeCount} passos**.\n\n👇 Clique no botão abaixo para importar e testar.`;
+    } else {
+        // Se falhou o JSON, tenta mostrar uma mensagem amigável se a IA mandou texto explicativo
+        if (!text.trim().startsWith('{')) {
+            displayText = text;
+        } else {
+             displayText = "⚠️ **A IA respondeu, mas o formato estava incorreto.**\nTente ser mais específico, ex: 'Crie um fluxo que consulta o Google e salva em arquivo'.";
+        }
+    }
+
+    return { text: displayText, flowData };
 
   } catch (error: any) {
     console.error("Fatal Gemini Error:", error);
-    let friendlyError = "Erro de conexão com a IA.";
     
-    if (error.message.includes('403')) {
-        friendlyError = "⛔ **Erro de Permissão (403)**: Sua chave de API não tem permissão para usar o modelo Generativo. Ative a 'Google Generative Language API' no Google Cloud Console.";
-    } else if (error.message.includes('404')) {
-        friendlyError = "⛔ **Erro de Modelo (404)**: Os modelos configurados não estão disponíveis para sua chave.";
+    let errorMessage = error.message || String(error);
+    
+    // Tratamento de erros comuns do Google
+    if (errorMessage.includes('404') || errorMessage.includes('NOT_FOUND')) {
+        return { 
+            text: "⛔ **Modelo Não Encontrado (Erro 404)**\n\nO modelo solicitado não está disponível. Isso pode acontecer com modelos 'Preview' antigos.\n\n**Tentativa de correção:** O sistema foi atualizado para usar `gemini-3-flash-preview`. Tente novamente.", 
+            flowData: undefined 
+        };
     }
 
-    return { text: friendlyError, flowData: undefined };
+    if (errorMessage.includes('403') || errorMessage.includes('permission')) {
+        return { 
+            text: "⛔ **Acesso Negado (Erro 403)**\n\nSua chave de API é válida, mas não tem permissão para usar este modelo ou serviço.\n\n**Solução:**\n1. Verifique se a 'Google Generative Language API' está ativada no seu projeto Google Cloud.\n2. Gere uma nova chave no Google AI Studio.", 
+            flowData: undefined 
+        };
+    }
+    
+    if (errorMessage.includes('429')) {
+        return { text: "⏳ **Muitas Requisições**\n\nVocê atingiu o limite gratuito da API. Aguarde um minuto e tente novamente.", flowData: undefined };
+    }
+
+    return { text: `❌ **Erro na IA**: ${errorMessage.substring(0, 200)}...`, flowData: undefined };
   }
 };
