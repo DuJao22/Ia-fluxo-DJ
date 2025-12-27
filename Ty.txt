@@ -1,1 +1,4 @@
 https://aistudio.google.com/apps/drive/1k7g_tPS9S9TVW0grPkCv_hVC9re2hYA_?showPreview=true&showAssistant=true
+
+
+https://aistudio.google.com/app/prompts?state=%7B%22ids%22:%5B%221k7g_tPS9S9TVW0grPkCv_hVC9re2hYA_%22%5D,%22action%22:%22open%22,%22userId%22:%22101655927649068563918%22,%22resourceKeys%22:%7B%7D%7D&usp=sharing
