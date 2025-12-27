@@ -46,8 +46,8 @@ ${JSON.stringify(simplifiedNodes, null, 2)}
 
     finalPromptParts.push({ text: `USUÁRIO DIZ: ${userPrompt}` });
 
-    // Tenta modelos robustos
-    const modelsToTry = ['gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'];
+    // Tenta modelos robustos, priorizando a série 3 para melhor lógica
+    const modelsToTry = ['gemini-3-flash-preview', 'gemini-2.0-flash', 'gemini-2.0-flash-exp', 'gemini-1.5-pro'];
     let response;
     let lastError: any = null;
 
@@ -67,6 +67,7 @@ ${JSON.stringify(simplifiedNodes, null, 2)}
         } catch (e: any) {
             lastError = e;
             const msg = e.message || "";
+            // Ignora erros de modelo não encontrado ou indisponível e tenta o próximo
             if (msg.includes('404') || msg.includes('NOT_FOUND') || msg.includes('403') || msg.includes('503')) {
                 continue;
             }
