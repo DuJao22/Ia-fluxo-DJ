@@ -10,7 +10,6 @@ import ReactFlow, {
   useEdgesState,
   Node,
   ReactFlowProvider,
-  useReactFlow,
 } from 'reactflow';
 import CustomNode from './components/CustomNode';
 import AIChat from './components/AIChat';
@@ -19,7 +18,7 @@ import FilePanel from './components/FilePanel';
 import SettingsModal from './components/SettingsModal';
 import ProjectLibraryModal from './components/ProjectLibraryModal'; 
 import NodeConfigPanel from './components/NodeConfigPanel';
-import { INITIAL_NODES, INITIAL_EDGES, APP_NAME, CREATOR_CREDIT } from './constants';
+import { INITIAL_NODES, INITIAL_EDGES, APP_NAME } from './constants';
 import { FlowEngine } from './services/flowEngine';
 import { storageService } from './services/storageService'; 
 import { FlowSchema, LogEntry, NodeStatus, GeneratedFile, FlowNode, SavedProject, NodeType } from './types';
@@ -50,13 +49,16 @@ const App = () => {
   
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
+  // Estados de Gerenciamento de Projeto
+  const [currentProject, setCurrentProject] = useState<{id: string, name: string} | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+
   const [activeTab, setActiveTab] = useState<'editor' | 'chat'>('editor');
   const [bottomPanelTab, setBottomPanelTab] = useState<'logs' | 'files'>('logs');
   const [isLogOpen, setIsLogOpen] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false); 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [lastSaveTime, setLastSaveTime] = useState<string>('');
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -73,12 +75,11 @@ const App = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.nodes && parsed.nodes.length > 0 && parsed.edges) {
+        if (parsed.nodes && parsed.nodes.length > 0) {
           setNodes(parsed.nodes);
-          setEdges(parsed.edges);
-          if (parsed.files && Array.isArray(parsed.files)) {
-            setFiles(parsed.files);
-          }
+          setEdges(parsed.edges || []);
+          setFiles(parsed.files || []);
+          if (parsed.currentProject) setCurrentProject(parsed.currentProject);
         }
       } catch (e) {
         console.error("Erro ao carregar autosave", e);
@@ -90,11 +91,15 @@ const App = () => {
   useEffect(() => {
     if (!isLoaded) return;
     const timeoutId = setTimeout(() => {
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ nodes, edges, files }));
-      setLastSaveTime(new Date().toLocaleTimeString());
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ nodes, edges, files, currentProject }));
     }, 1000);
     return () => clearTimeout(timeoutId);
-  }, [nodes, edges, files, isLoaded]);
+  }, [nodes, edges, files, isLoaded, currentProject]);
+
+  // Monitorar mudanças para marcar como "sujo"
+  useEffect(() => {
+    if (isLoaded) setIsDirty(true);
+  }, [nodes, edges]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -152,12 +157,62 @@ const App = () => {
 
   const selectedNode = nodes.find(n => n.id === selectedNodeId) as FlowNode || null;
 
-  // --- PROJECT EXPORT/IMPORT ---
+  // --- LÓGICA DE PERSISTÊNCIA ---
 
+  const handleNewProject = useCallback(() => {
+    if (isDirty && !window.confirm("Você tem alterações não salvas. Deseja criar um novo projeto?")) {
+        return;
+    }
+    setNodes(INITIAL_NODES);
+    setEdges(INITIAL_EDGES);
+    setFiles([]);
+    setLogs([]);
+    setCurrentProject(null);
+    setIsDirty(false);
+  }, [isDirty, setNodes, setEdges]);
+
+  const handleSaveProject = useCallback(() => {
+    if (currentProject) {
+      storageService.updateProject(currentProject.id, nodes, edges, files);
+      setIsDirty(false);
+      setLogs(prev => [...prev, {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        nodeId: 'system',
+        nodeLabel: 'System',
+        level: 'SUCCESS',
+        message: `Projeto "${currentProject.name}" atualizado na biblioteca.`
+      }]);
+    } else {
+      const name = window.prompt("Dê um nome ao seu novo projeto:", `Fluxo ${new Date().toLocaleTimeString()}`);
+      if (name) {
+        const saved = storageService.saveProject(name, nodes, edges, files);
+        setCurrentProject({ id: saved.id, name: saved.name });
+        setIsDirty(false);
+      }
+    }
+  }, [nodes, edges, files, currentProject]);
+
+  const handleLoadProject = useCallback((project: SavedProject) => {
+    const normalizedNodes = project.nodes.map(n => ({
+      ...n, 
+      data: { ...n.data, status: NodeStatus.IDLE },
+      type: 'custom'
+    }));
+    
+    setNodes(normalizedNodes);
+    setEdges(project.edges.map(e => ({ ...e, animated: true, style: { stroke: '#63b3ed' } })));
+    setFiles(project.files || []);
+    setCurrentProject({ id: project.id, name: project.name });
+    setIsDirty(false);
+    setLogs([]);
+  }, [setNodes, setEdges]);
+
+  // FUNÇÃO PARA BAIXAR O JSON DO PROJETO
   const handleExportProject = useCallback(() => {
     const projectData: SavedProject = {
-      id: crypto.randomUUID(),
-      name: `Export-${new Date().toISOString().split('T')[0]}`,
+      id: currentProject?.id || crypto.randomUUID(),
+      name: currentProject?.name || "projeto-sem-nome",
       createdAt: Date.now(),
       updatedAt: Date.now(),
       nodes,
@@ -169,12 +224,21 @@ const App = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `flow-project-${Date.now()}.json`;
+    a.download = `${projectData.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  }, [nodes, edges, files]);
+
+    setLogs(prev => [...prev, {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        nodeId: 'system',
+        nodeLabel: 'System',
+        level: 'SUCCESS',
+        message: `Arquivo JSON do projeto "${projectData.name}" baixado com sucesso.`
+    }]);
+  }, [nodes, edges, files, currentProject]);
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -192,10 +256,10 @@ const App = () => {
             nodeId: 'system',
             nodeLabel: 'System',
             level: 'SUCCESS',
-            message: `Projeto "${json.name || 'Importado'}" carregado de arquivo JSON.`
+            message: `Projeto "${json.name || 'Importado'}" carregado do arquivo JSON.`
           }]);
         } else {
-          alert("Arquivo inválido: Nodes ou Edges ausentes.");
+            alert("Formato de arquivo inválido. Use um JSON exportado por esta plataforma.");
         }
       } catch (err) {
         alert("Erro ao ler o arquivo JSON.");
@@ -205,33 +269,12 @@ const App = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSaveProject = useCallback(() => {
-    const name = window.prompt("Nome do Projeto:", `Projeto ${new Date().toLocaleTimeString()}`);
-    if (name) {
-      storageService.saveProject(name, nodes, edges, files);
-      setLogs(prev => [...prev, {
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        nodeId: 'system',
-        nodeLabel: 'System',
-        level: 'SUCCESS',
-        message: `Projeto "${name}" salvo na biblioteca local.`
-      }]);
-    }
-  }, [nodes, edges, files]);
-
-  const handleLoadProject = useCallback((project: SavedProject) => {
-    setNodes(project.nodes.map(n => ({...n, data: {...n.data, status: NodeStatus.IDLE}, type: 'custom'})));
-    setEdges(project.edges.map(e => ({...e, animated: true, style: { stroke: '#63b3ed' }})));
-    setFiles(project.files || []);
-  }, [setNodes, setEdges]);
-
   const handleImportFlow = useCallback((flowData: FlowSchema) => {
     const newNodes: Node[] = flowData.nodes.map((n: any) => ({
       id: n.id,
       type: 'custom',
       position: { x: n.position?.x || Math.random() * 400, y: n.position?.y || Math.random() * 400 },
-      data: { ...n.data, label: n.data?.label || n.type || 'Node Importado', type: n.data?.type || n.type || 'custom', status: NodeStatus.IDLE }
+      data: { ...n.data, label: n.data?.label || n.type || 'Node', type: n.data?.type || n.type || 'custom', status: NodeStatus.IDLE }
     }));
 
     const newEdges: Edge[] = flowData.edges.map((e: any) => ({
@@ -272,10 +315,18 @@ const App = () => {
     <ReactFlowProvider>
       <div className="flex h-[100dvh] w-screen overflow-hidden flex-col bg-gray-950 text-white">
         <header className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 shrink-0 z-50">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-md"></div>
-            <h1 className="font-bold text-lg tracking-tight hidden sm:block">{APP_NAME}</h1>
-            <h1 className="font-bold text-lg tracking-tight sm:hidden">Flow AI</h1>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+                <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-md shadow-lg shadow-blue-900/20"></div>
+                <h1 className="font-bold text-lg tracking-tight hidden xl:block">{APP_NAME}</h1>
+            </div>
+
+            <div className="hidden sm:flex items-center bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-1 gap-2">
+                <div className={`w-2 h-2 rounded-full ${isDirty ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                <span className="text-xs font-bold text-gray-200 truncate max-w-[150px]">
+                    {currentProject ? currentProject.name : 'Novo Fluxo'}
+                </span>
+            </div>
           </div>
           
           <div className="flex items-center gap-2">
@@ -284,22 +335,29 @@ const App = () => {
                 <button onClick={() => setActiveTab('chat')} className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${activeTab === 'chat' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>Chat</button>
              </div>
 
-             <div className="flex items-center gap-1.5">
-                <button onClick={handleSaveProject} className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded shadow-lg transition-colors" title="Salvar na Biblioteca Local">
-                   Salvar
+             <div className="flex items-center gap-1 mr-2 pr-2 border-r border-gray-700/50">
+                <button onClick={handleNewProject} className="hidden lg:flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Novo Projeto">
+                   Novo
                 </button>
-                <button onClick={handleExportProject} className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-blue-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Exportar como JSON">
-                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                   Exportar
+
+                <button onClick={handleSaveProject} className={`flex items-center gap-1.5 px-3 py-1.5 ${isDirty ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 text-gray-400 cursor-default'} text-white text-xs font-bold rounded shadow-lg transition-all active:scale-95`} title="Salvar na Biblioteca">
+                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                   <span className="hidden xl:inline">Salvar</span>
                 </button>
-                <button onClick={() => fileInputRef.current?.click()} className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-green-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Importar arquivo JSON">
-                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                   Importar
+
+                <button onClick={handleExportProject} className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-blue-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Baixar Arquivo .json">
+                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                   <span className="hidden xl:inline">Exportar JSON</span>
+                </button>
+
+                <button onClick={() => fileInputRef.current?.click()} className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-green-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Importar Arquivo .json">
+                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                   <span className="hidden xl:inline">Importar</span>
                 </button>
                 <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
                 
                 <button onClick={() => setIsLibraryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-purple-300 text-xs font-medium rounded border border-gray-700 transition-colors">
-                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
                    <span className="hidden sm:inline">Biblioteca</span>
                 </button>
              </div>
@@ -321,7 +379,7 @@ const App = () => {
                 </button>
                 {isAddMenuOpen && (
                     <div className="absolute top-12 left-0 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden animate-fade-in-up flex flex-col z-50">
-                        <div className="p-2 bg-gray-900 border-b border-gray-700 text-[10px] font-bold text-gray-400 uppercase">Nodes Manuais</div>
+                        <div className="p-2 bg-gray-900 border-b border-gray-700 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Adicionar Node</div>
                         {[
                           {type: NodeType.START, label: 'Gatilho Inicial', color: 'bg-green-500'},
                           {type: NodeType.HTTP_REQUEST, label: 'HTTP Request', color: 'bg-blue-500'},
@@ -368,7 +426,13 @@ const App = () => {
         </div>
 
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} apiKeyPresent={!!process.env.API_KEY} />
-        <ProjectLibraryModal isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} onLoadProject={handleLoadProject} currentNodesCount={nodes.length} />
+        <ProjectLibraryModal 
+            isOpen={isLibraryOpen} 
+            onClose={() => setIsLibraryOpen(false)} 
+            onLoadProject={handleLoadProject} 
+            currentNodesCount={nodes.length} 
+            activeProjectId={currentProject?.id}
+        />
       </div>
     </ReactFlowProvider>
   );
