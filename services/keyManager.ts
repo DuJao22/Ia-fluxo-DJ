@@ -3,6 +3,7 @@ import { MY_API_KEYS } from '../api_keys_list';
 
 /**
  * Gerenciador de Chaves de API (Load Balancer / Rotation)
+ * Otimizado para ambientes de produção (Vercel) e desenvolvimento local.
  */
 
 type KeyListener = (status: string) => void;
@@ -18,23 +19,31 @@ class KeyManager {
   }
 
   private loadKeys() {
-    // 1. Chaves do arquivo físico
+    // 1. Prioridade para chaves do ambiente (Vercel Build Environment)
+    // Usamos split para permitir múltiplas chaves separadas por vírgula em uma única variável
+    let envKeys: string[] = [];
+    try {
+      const rawEnv = process.env.API_KEY || "";
+      if (rawEnv && rawEnv !== "undefined" && rawEnv !== "null") {
+        envKeys = rawEnv.split(/[\s,]+/).filter(k => k.length > 20 && k.startsWith('AIza'));
+      }
+    } catch (e) {
+      console.warn("[KeyManager] Falha ao ler chaves do ambiente.");
+    }
+
+    // 2. Chaves do arquivo físico local
     const fileKeys = Array.isArray(MY_API_KEYS) 
-      ? MY_API_KEYS.filter(k => k && typeof k === 'string' && k.length > 30 && !k.includes('SUA_CHAVE')) 
+      ? MY_API_KEYS.filter(k => k && k.length > 20 && k.startsWith('AIza')) 
       : [];
     
-    // 2. Chave do ambiente (Vercel) - Cuidado com "undefined" como string
-    let envValue = process.env.API_KEY || '';
-    if (envValue === "undefined" || envValue === "null") envValue = "";
-
-    const envKeys = envValue.split(/[\s,]+/)
-      .map(k => k.trim())
-      .filter(k => k && k.length > 30 && k.startsWith("AIza"));
+    // 3. Mescla e remove duplicatas
+    this.keys = Array.from(new Set([...envKeys, ...fileKeys]));
     
-    // 3. Mescla e remove duplicatas, garantindo que só temos chaves que parecem válidas
-    this.keys = Array.from(new Set([...fileKeys, ...envKeys]));
-    
-    console.log(`[KeyManager] Pool inicializado com ${this.keys.length} chaves potenciais.`);
+    if (this.keys.length === 0) {
+      console.error("[KeyManager] Nenhuma chave de API válida encontrada!");
+    } else {
+      console.log(`[KeyManager] Pool carregado com ${this.keys.length} chaves.`);
+    }
     this.notify();
   }
 
@@ -52,40 +61,30 @@ class KeyManager {
   public getActiveKey(): string {
     if (this.keys.length === 0) return '';
     
+    // Tenta encontrar a próxima chave saudável
     let attempts = 0;
-    // Tenta encontrar uma chave que não falhou
     while (this.failedKeys.has(this.keys[this.currentIndex]) && attempts < this.keys.length) {
       this.currentIndex = (this.currentIndex + 1) % this.keys.length;
       attempts++;
     }
     
-    // Se todas falharam, resetamos para não travar o app, mas avisamos
-    if (attempts >= this.keys.length && this.keys.length > 0) {
-        console.error("[KeyManager] CRÍTICO: Todas as chaves falharam. Tentando novamente do zero.");
-        this.failedKeys.clear();
-        this.currentIndex = 0;
-    }
-    
-    return this.keys[this.currentIndex];
+    return this.keys[this.currentIndex] || '';
   }
 
   /**
-   * Marca a chave atual como falha e move o ponteiro para a próxima
+   * Marca a chave atual como falha e tenta rotacionar.
+   * Retorna true se ainda houver chaves saudáveis no pool.
    */
   public markCurrentKeyAsFailed(): boolean {
-    if (this.keys.length === 0) return false;
-    
-    const failedKey = this.keys[this.currentIndex];
-    if (!failedKey) return false;
+    const keyToMark = this.keys[this.currentIndex];
+    if (keyToMark) {
+      this.failedKeys.add(keyToMark);
+      console.error(`[KeyManager] Chave #${this.currentIndex + 1} marcada como INVÁLIDA ou ESGOTADA.`);
+    }
 
-    this.failedKeys.add(failedKey);
-    console.error(`[KeyManager] Chave #${this.currentIndex + 1} bloqueada por erro da API.`);
-    
-    // Move para a próxima imediatamente
     this.currentIndex = (this.currentIndex + 1) % this.keys.length;
     this.notify();
     
-    // Retorna true se ainda houver alguma chave que não falhou
     return this.failedKeys.size < this.keys.length;
   }
 
@@ -94,7 +93,7 @@ class KeyManager {
         total: this.keys.length,
         failed: this.failedKeys.size,
         current: this.currentIndex,
-        healthy: this.keys.length - this.failedKeys.size
+        healthy: Math.max(0, this.keys.length - this.failedKeys.size)
     });
   }
 
