@@ -50,7 +50,7 @@ const AIChat: React.FC<AIChatProps> = ({ onImportFlow, logs, nodes, edges }) => 
   return (
     <div className="flex flex-col h-full bg-gray-950 w-full overflow-hidden relative">
       {/* Header do Chat */}
-      <div className="p-3 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md sticky top-0 z-10 flex items-center justify-between">
+      <div className="p-3 border-b border-gray-800 bg-gray-900/80 backdrop-blur-md sticky top-0 z-10 flex items-center justify-between shrink-0">
         <div>
             <h2 className="text-[11px] font-black text-white uppercase tracking-widest flex items-center gap-2">
                 <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
@@ -61,7 +61,7 @@ const AIChat: React.FC<AIChatProps> = ({ onImportFlow, logs, nodes, edges }) => 
       </div>
 
       {/* Lista de Mensagens */}
-      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-24 space-y-4 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-4 pt-4 pb-4 space-y-4 custom-scrollbar">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div className={`max-w-[92%] md:max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-lg ${
@@ -101,12 +101,12 @@ const AIChat: React.FC<AIChatProps> = ({ onImportFlow, logs, nodes, edges }) => 
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} className="h-4" />
+        <div ref={messagesEndRef} className="h-2" />
       </div>
 
-      {/* Barra de Input Estilizada */}
-      <div className="absolute bottom-0 inset-x-0 p-3 bg-gradient-to-t from-gray-950 via-gray-950 to-transparent">
-        <div className="flex gap-2 bg-gray-900/90 backdrop-blur-sm p-1.5 border border-gray-700 rounded-2xl shadow-2xl focus-within:border-blue-500 transition-colors">
+      {/* Barra de Input Estilizada - AGORA NO FLUXO NORMAL (Flex) */}
+      <div className="shrink-0 p-3 bg-gray-900 border-t border-gray-800 z-20 pb-[max(12px,env(safe-area-inset-bottom))]">
+        <div className="flex gap-2 bg-gray-950 p-1.5 border border-gray-700 rounded-2xl shadow-xl focus-within:border-blue-500 transition-colors">
           <input
             type="text" 
             value={input} 

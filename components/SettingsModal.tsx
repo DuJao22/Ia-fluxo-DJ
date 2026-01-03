@@ -1,6 +1,6 @@
-
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { CREATOR_CREDIT } from '../constants';
+import { keyManager } from '../services/keyManager';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -8,14 +8,42 @@ interface SettingsModalProps {
 }
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+  const [apiKey, setApiKey] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      const storedKey = localStorage.getItem('gemini_api_key') || '';
+      setApiKey(storedKey);
+      setSaved(false);
+    }
+  }, [isOpen]);
+
+  const handleSave = () => {
+    if (!apiKey.trim()) {
+      localStorage.removeItem('gemini_api_key');
+    } else {
+      localStorage.setItem('gemini_api_key', apiKey.trim());
+    }
+    
+    // Atualiza o gerenciador de chaves imediatamente
+    keyManager.setCustomKey(apiKey.trim());
+    
+    setSaved(true);
+    setTimeout(() => {
+      setSaved(false);
+      onClose();
+    }, 1000);
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
       <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
         <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             Configurações
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
@@ -24,13 +52,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         </div>
         
         <div className="p-6 space-y-6">
+          
+          {/* API KEY INPUT */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-blue-400 uppercase tracking-wider block">Chave de API Gemini (Google AI)</label>
+            <p className="text-[10px] text-gray-500 mb-2">
+              Necessário para gerar fluxos com IA. Obtenha sua chave gratuita no <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">Google AI Studio</a>.
+            </p>
+            <div className="relative">
+                <input 
+                  type="password" 
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Cole sua chave AIza... aqui"
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono"
+                />
+                {apiKey && (
+                  <div className="absolute right-3 top-3">
+                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  </div>
+                )}
+            </div>
+            <p className="text-[9px] text-gray-600">
+               Sua chave é salva apenas no seu navegador (LocalStorage) e enviada diretamente ao Google.
+            </p>
+          </div>
+
+          <div className="h-px bg-gray-800"></div>
+
           {/* System Info */}
           <div>
             <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Sobre o Sistema</h3>
             <div className="bg-gray-800/50 rounded-lg p-4 text-xs text-gray-400 space-y-2 border border-gray-700/50">
               <div className="flex justify-between">
                 <span>Versão</span>
-                <span className="text-gray-200">1.3.0 (Persistência)</span>
+                <span className="text-gray-200">1.4.0 (BYOK Edition)</span>
               </div>
               <div className="flex justify-between">
                 <span>Engine</span>
@@ -49,7 +105,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             onClick={onClose}
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm font-medium transition-colors"
           >
-            Fechar
+            Cancelar
+          </button>
+          <button 
+            onClick={handleSave}
+            className={`px-6 py-2 rounded-md text-sm font-bold transition-all shadow-lg ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/30'}`}
+          >
+            {saved ? 'Salvo!' : 'Salvar Configurações'}
           </button>
         </div>
       </div>

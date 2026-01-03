@@ -1,4 +1,3 @@
-
 import { MY_API_KEYS } from '../api_keys_list';
 
 /**
@@ -18,7 +17,21 @@ class KeyManager {
   }
 
   private loadKeys() {
-    // 1. Chaves do ambiente (Vercel)
+    this.keys = []; // Reset
+
+    // 1. Chave do Usuário (LocalStorage) - PRIORIDADE MÁXIMA
+    // Permite que o usuário insira sua própria chave nas configurações
+    let customKey: string | null = null;
+    if (typeof window !== 'undefined') {
+        customKey = localStorage.getItem('gemini_api_key');
+    }
+
+    if (customKey && customKey.trim().length > 20 && customKey.startsWith('AIza')) {
+        this.keys.push(customKey.trim());
+    }
+
+    // 2. Chaves do ambiente (Vercel)
+    // Só carrega se não tiver chave customizada ou para fallback
     let envKeys: string[] = [];
     try {
       const rawEnv = process.env.API_KEY || "";
@@ -27,19 +40,32 @@ class KeyManager {
       }
     } catch (e) {}
 
-    // 2. Chaves do arquivo físico
+    // 3. Chaves do arquivo físico
     const fileKeys = Array.isArray(MY_API_KEYS) 
       ? MY_API_KEYS.map(k => k.trim()).filter(k => k && k.length > 20 && k.startsWith('AIza')) 
       : [];
     
-    // 3. Mescla e remove duplicatas
-    this.keys = Array.from(new Set([...envKeys, ...fileKeys]));
+    // Mescla chaves de ambiente e arquivo, mas a customKey fica sempre em primeiro se existir
+    const systemKeys = Array.from(new Set([...envKeys, ...fileKeys]));
+    this.keys = [...this.keys, ...systemKeys];
     
-    // Fallback para console caso não haja chaves
+    // Fallback log
     if (this.keys.length === 0) {
-      console.error("[KeyManager] CRÍTICO: Nenhuma chave API detectada!");
+      console.warn("[KeyManager] Nenhuma chave API detectada. Configure nas opções.");
     }
     this.notify();
+  }
+
+  public setCustomKey(key: string) {
+      // Método chamado quando o usuário salva no SettingsModal
+      if (key && key.trim()) {
+        localStorage.setItem('gemini_api_key', key.trim());
+      } else {
+        localStorage.removeItem('gemini_api_key');
+      }
+      // Recarrega e reseta estado
+      this.reset(); 
+      this.loadKeys();
   }
 
   public subscribe(listener: KeyListener) {
@@ -63,7 +89,6 @@ class KeyManager {
       attempts++;
     }
     
-    // Se todas falharam, retornamos a última mas o sistema já terá emitido erro
     return this.keys[this.currentIndex] || '';
   }
 
@@ -73,7 +98,7 @@ class KeyManager {
     const keyToMark = this.keys[this.currentIndex];
     this.failedKeys.add(keyToMark);
     
-    console.error(`[KeyManager] Chave #${this.currentIndex + 1} marcada como INVÁLIDA/BLOQUEADA.`);
+    console.error(`[KeyManager] Chave #${this.currentIndex + 1} falhou.`);
     
     // Avança para a próxima
     this.currentIndex = (this.currentIndex + 1) % this.keys.length;
