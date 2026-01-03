@@ -18,19 +18,23 @@ class KeyManager {
   }
 
   private loadKeys() {
-    // 1. Chaves do arquivo físico (mais seguras no Vercel se estiverem no código)
+    // 1. Chaves do arquivo físico
     const fileKeys = Array.isArray(MY_API_KEYS) 
-      ? MY_API_KEYS.filter(k => k && typeof k === 'string' && k.length > 20 && !k.includes('SUA_CHAVE')) 
+      ? MY_API_KEYS.filter(k => k && typeof k === 'string' && k.length > 30 && !k.includes('SUA_CHAVE')) 
       : [];
     
-    // 2. Chave do ambiente (Vercel Dashboard)
-    const envValue = process.env.API_KEY || '';
-    const envKeys = envValue.split(/[\s,]+/).map(k => k.trim()).filter(k => k && k.length > 20);
+    // 2. Chave do ambiente (Vercel) - Cuidado com "undefined" como string
+    let envValue = process.env.API_KEY || '';
+    if (envValue === "undefined" || envValue === "null") envValue = "";
+
+    const envKeys = envValue.split(/[\s,]+/)
+      .map(k => k.trim())
+      .filter(k => k && k.length > 30 && k.startsWith("AIza"));
     
-    // 3. Mescla e remove duplicatas
+    // 3. Mescla e remove duplicatas, garantindo que só temos chaves que parecem válidas
     this.keys = Array.from(new Set([...fileKeys, ...envKeys]));
     
-    console.log(`[KeyManager] Pool inicializado com ${this.keys.length} chaves válidas.`);
+    console.log(`[KeyManager] Pool inicializado com ${this.keys.length} chaves potenciais.`);
     this.notify();
   }
 
@@ -55,9 +59,9 @@ class KeyManager {
       attempts++;
     }
     
-    // Se todas falharam, resetamos para tentar novamente (pode ter sido um erro temporário de rede)
+    // Se todas falharam, resetamos para não travar o app, mas avisamos
     if (attempts >= this.keys.length && this.keys.length > 0) {
-        console.warn("[KeyManager] Todas as chaves do pool falharam. Tentando resetar status...");
+        console.error("[KeyManager] CRÍTICO: Todas as chaves falharam. Tentando novamente do zero.");
         this.failedKeys.clear();
         this.currentIndex = 0;
     }
@@ -66,20 +70,22 @@ class KeyManager {
   }
 
   /**
-   * Marca a chave como falha e retorna se ainda existem chaves disponíveis
+   * Marca a chave atual como falha e move o ponteiro para a próxima
    */
   public markCurrentKeyAsFailed(): boolean {
     if (this.keys.length === 0) return false;
     
     const failedKey = this.keys[this.currentIndex];
+    if (!failedKey) return false;
+
     this.failedKeys.add(failedKey);
+    console.error(`[KeyManager] Chave #${this.currentIndex + 1} bloqueada por erro da API.`);
     
-    console.error(`[KeyManager] Chave #${this.currentIndex + 1} marcada como INVÁLIDA/ESGOTADA.`);
-    
-    // Move para a próxima
+    // Move para a próxima imediatamente
     this.currentIndex = (this.currentIndex + 1) % this.keys.length;
     this.notify();
     
+    // Retorna true se ainda houver alguma chave que não falhou
     return this.failedKeys.size < this.keys.length;
   }
 

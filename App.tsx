@@ -61,43 +61,35 @@ const App = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  
   const selectedNode = nodes.find(n => n.id === selectedNodeId) || null;
 
   const [currentProject, setCurrentProject] = useState<{id: string, name: string} | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'editor' | 'chat'>('editor');
-  const [bottomPanelTab, setBottomPanelTab] = useState<'logs' | 'files'>('logs');
-  const [isLogOpen, setIsLogOpen] = useState(true);
+  // NAVEGAÇÃO MOBILE-FIRST
+  const [activeView, setActiveView] = useState<'flow' | 'chat' | 'terminal'>('flow');
+  const [terminalTab, setTerminalTab] = useState<'logs' | 'files'>('logs');
+  
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false); 
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
     const saved = localStorage.getItem(AUTOSAVE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.nodes && parsed.nodes.length > 0) {
+        if (parsed.nodes) {
           setNodes(parsed.nodes);
           setEdges(parsed.edges || []);
           setFiles(parsed.files || []);
           if (parsed.currentProject) setCurrentProject(parsed.currentProject);
         }
-      } catch (e) {
-        console.error("Erro ao carregar autosave", e);
-      }
+      } catch (e) {}
     }
     setIsLoaded(true);
   }, [setNodes, setEdges]);
@@ -110,27 +102,18 @@ const App = () => {
     return () => clearTimeout(timeoutId);
   }, [nodes, edges, files, isLoaded, currentProject]);
 
-  useEffect(() => {
-    if (isLoaded) setIsDirty(true);
-  }, [nodes, edges]);
-
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({ ...params, ...defaultEdgeOptions }, eds)),
     [setEdges]
   );
 
-  const onNodeClick = useCallback((event: React.MouseEvent, node: Node) => {
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     setSelectedNodeId(node.id);
   }, []);
 
   const handleUpdateNodeConfig = useCallback((nodeId: string, newConfig: any) => {
     setNodes((nds) => 
-      nds.map((node) => {
-        if (node.id === nodeId) {
-          return { ...node, data: { ...node.data, config: newConfig } };
-        }
-        return node;
-      })
+      nds.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, config: newConfig } } : node)
     );
   }, [setNodes]);
 
@@ -139,7 +122,7 @@ const App = () => {
     const newNode: FlowNode = {
       id,
       type: 'custom',
-      position: { x: 250 + (Math.random() * 50), y: 100 + (Math.random() * 50) },
+      position: { x: 100, y: 100 },
       data: { label, type, status: NodeStatus.IDLE, config: {} }
     };
     setNodes((nds) => nds.concat(newNode));
@@ -153,310 +136,174 @@ const App = () => {
     setSelectedNodeId(null);
   }, [setNodes, setEdges]);
 
-  const handleDuplicateNode = useCallback((nodeId: string) => {
-    const nodeToClone = nodes.find(n => n.id === nodeId);
-    if (!nodeToClone) return;
-    const newId = `${nodeToClone.data.type}-${Date.now()}`;
-    const newNode: FlowNode = {
-      ...nodeToClone,
-      id: newId,
-      position: { x: nodeToClone.position.x + 20, y: nodeToClone.position.y + 20 },
-      data: { ...nodeToClone.data, label: `${nodeToClone.data.label} (Copy)`, status: NodeStatus.IDLE },
-      selected: true
-    };
-    setNodes((nds) => nds.concat(newNode));
-    setSelectedNodeId(newId);
-  }, [nodes, setNodes]);
-
-  const handleNewProject = useCallback(() => {
-    if (isDirty && !window.confirm("Você tem alterações não salvas. Deseja criar um novo projeto?")) {
-        return;
-    }
-    setNodes(INITIAL_NODES);
-    setEdges(INITIAL_EDGES);
-    setFiles([]);
-    setLogs([]);
-    setCurrentProject(null);
-    setIsDirty(false);
-  }, [isDirty, setNodes, setEdges]);
-
-  const handleSaveProject = useCallback(() => {
-    if (currentProject) {
-      storageService.updateProject(currentProject.id, nodes, edges, files);
-      setIsDirty(false);
-      setLogs(prev => [...prev, {
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        nodeId: 'system',
-        nodeLabel: 'System',
-        level: 'SUCCESS',
-        message: `Projeto "${currentProject.name}" atualizado na biblioteca.`
-      }]);
-    } else {
-      const name = window.prompt("Dê um nome ao seu novo projeto:", `Fluxo ${new Date().toLocaleTimeString()}`);
-      if (name) {
-        const saved = storageService.saveProject(name, nodes, edges, files);
-        setCurrentProject({ id: saved.id, name: saved.name });
-        setIsDirty(false);
-      }
-    }
-  }, [nodes, edges, files, currentProject]);
-
-  const handleLoadProject = useCallback((project: SavedProject) => {
-    const normalizedNodes = project.nodes.map(n => ({
-      ...n, 
-      data: { ...n.data, status: NodeStatus.IDLE },
-      type: 'custom'
-    }));
-    
-    setNodes(normalizedNodes);
-    setEdges(project.edges.map(e => ({ ...e, ...defaultEdgeOptions })));
-    setFiles(project.files || []);
-    setCurrentProject({ id: project.id, name: project.name });
-    setIsDirty(false);
-    setLogs([]);
-  }, [setNodes, setEdges]);
-
-  const handleExportProject = useCallback(() => {
-    const projectData: SavedProject = {
-      id: currentProject?.id || crypto.randomUUID(),
-      name: currentProject?.name || "projeto-sem-nome",
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      nodes,
-      edges,
-      files
-    };
-    
-    const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${projectData.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [nodes, edges, files, currentProject]);
-
-  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        if (json.nodes && json.edges) {
-          handleLoadProject(json);
-        }
-      } catch (err) {
-        alert("Erro ao ler o arquivo JSON.");
-      }
-    };
-    reader.readAsText(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleImportFlow = useCallback((flowData: FlowSchema) => {
-    const newNodes: Node[] = flowData.nodes.map((n: any) => ({
-      id: n.id,
-      type: 'custom',
-      position: { x: n.position?.x || Math.random() * 400, y: n.position?.y || Math.random() * 400 },
-      data: { ...n.data, label: n.data?.label || n.type || 'Node', type: n.data?.type || n.type || 'custom', status: NodeStatus.IDLE }
-    }));
-
-    const newEdges: Edge[] = flowData.edges.map((e: any) => ({
-      ...e,
-      id: e.id || `e-${e.source}-${e.target}`,
-      ...defaultEdgeOptions
-    }));
-
-    setNodes(newNodes);
-    setEdges(newEdges);
-    setFiles([]);
-    if (isMobile) setActiveTab('editor');
-  }, [setNodes, setEdges, isMobile]);
-
   const handleRunFlow = useCallback(async () => {
     if (isExecuting) return;
     setIsExecuting(true);
     setLogs([]); 
-    setIsLogOpen(true);
-    setBottomPanelTab('logs');
+    setActiveView('terminal');
+    setTerminalTab('logs');
     setNodes((nds) => nds.map(n => ({ ...n, data: { ...n.data, status: NodeStatus.IDLE } })));
 
     const engine = new FlowEngine(
-      nodes, 
-      edges, 
-      setNodes, 
-      (log: LogEntry) => setLogs(prev => [...prev, log]),
-      (file: GeneratedFile) => setFiles(prev => [file, ...prev])
+      nodes, edges, setNodes, 
+      (log) => setLogs(prev => [...prev, log]),
+      (file) => setFiles(prev => [file, ...prev])
     );
 
     await engine.run();
     setIsExecuting(false);
   }, [nodes, edges, isExecuting, setNodes]);
 
+  const handleLoadProject = (project: SavedProject) => {
+    setNodes(project.nodes.map(n => ({ ...n, type: 'custom' })));
+    setEdges(project.edges.map(e => ({ ...e, ...defaultEdgeOptions })));
+    setFiles(project.files || []);
+    setCurrentProject({ id: project.id, name: project.name });
+    setIsDirty(false);
+    setActiveView('flow');
+  };
+
   return (
     <ReactFlowProvider>
-      <div className="flex h-[100dvh] w-screen overflow-hidden flex-col bg-gray-950 text-white">
-        <header className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 shrink-0 z-50">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-                <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-purple-600 rounded-md shadow-lg shadow-blue-900/20"></div>
-                <h1 className="font-bold text-lg tracking-tight hidden xl:block">{APP_NAME}</h1>
-            </div>
-
-            <div className="hidden sm:flex items-center bg-gray-800/50 border border-gray-700 rounded-lg px-3 py-1 gap-2">
-                <div className={`w-2 h-2 rounded-full ${isDirty ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
-                <span className="text-xs font-bold text-gray-200 truncate max-w-[150px]">
-                    {currentProject ? currentProject.name : 'Novo Fluxo'}
-                </span>
+      <div className="flex h-[100dvh] w-screen overflow-hidden flex-col bg-gray-950 text-white select-none">
+        
+        {/* HEADER RESPONSIVO */}
+        <header className="h-14 bg-gray-900 border-b border-gray-700 flex items-center justify-between px-4 shrink-0 z-[60]">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center font-bold text-lg shadow-lg">F</div>
+            <div className="flex flex-col">
+                <h1 className="font-bold text-sm tracking-tight leading-none">{APP_NAME}</h1>
+                <span className="text-[9px] text-gray-500 font-mono mt-1">{currentProject?.name || 'Novo Fluxo'}</span>
             </div>
           </div>
           
           <div className="flex items-center gap-2">
              <KeyStatusPanel />
              
-             <div className="flex md:hidden bg-gray-800 rounded-lg p-1 mr-1">
-                <button onClick={() => setActiveTab('editor')} className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${activeTab === 'editor' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Editor</button>
-                <button onClick={() => setActiveTab('chat')} className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${activeTab === 'chat' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>Chat</button>
+             {/* MENU DE AÇÕES MOBILE */}
+             <div className="relative">
+                <button 
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="p-2 bg-gray-800 rounded-lg text-gray-400 hover:text-white border border-gray-700"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
+                </button>
+
+                {isMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-56 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl z-[100] py-2 animate-fade-in-up overflow-hidden">
+                    <button onClick={() => { setIsLibraryOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-700 flex items-center gap-3 border-b border-gray-700/50">
+                       <svg className="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                       Biblioteca
+                    </button>
+                    <button onClick={() => { setIsSettingsOpen(true); setIsMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm hover:bg-gray-700 flex items-center gap-3">
+                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                       Configurações
+                    </button>
+                  </div>
+                )}
              </div>
 
-             <div className="flex items-center gap-1 mr-2 pr-2 border-r border-gray-700/50">
-                <button onClick={handleNewProject} className="hidden lg:flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Novo Projeto">
-                   Novo
-                </button>
-
-                <button onClick={handleSaveProject} className={`flex items-center gap-1.5 px-3 py-1.5 ${isDirty ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 text-gray-400 cursor-default'} text-white text-xs font-bold rounded shadow-lg transition-all active:scale-95`} title="Salvar na Biblioteca">
-                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                   <span className="hidden xl:inline">Salvar</span>
-                </button>
-
-                <button onClick={handleExportProject} className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-blue-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Baixar Arquivo .json">
-                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                   <span className="hidden xl:inline">Exportar JSON</span>
-                </button>
-
-                <button onClick={() => fileInputRef.current?.click()} className="hidden sm:flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-green-300 text-xs font-medium rounded border border-gray-700 transition-colors" title="Importar Arquivo .json">
-                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                   <span className="hidden xl:inline">Importar</span>
-                </button>
-                <input type="file" ref={fileInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
-                
-                <button onClick={() => setIsLibraryOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-purple-300 text-xs font-medium rounded border border-gray-700 transition-colors">
-                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                   <span className="hidden sm:inline">Biblioteca</span>
-                </button>
-             </div>
-
-             <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-gray-400 hover:text-white bg-gray-800 rounded-md transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
-             
-             <button onClick={handleRunFlow} disabled={isExecuting} className={`${isExecuting ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} text-white px-3 sm:px-4 py-1.5 rounded-md font-bold text-xs transition-all flex items-center gap-2 shadow-lg`}>
-               {isExecuting ? <svg className="animate-spin h-3 w-3 text-white" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 001.664l-3-2z"/></svg>}
-               <span className="hidden sm:inline">{isExecuting ? 'RODANDO' : 'EXECUTAR'}</span>
+             <button 
+                onClick={handleRunFlow} 
+                disabled={isExecuting}
+                className={`flex items-center justify-center w-10 h-10 rounded-lg transition-all shadow-lg ${isExecuting ? 'bg-gray-700 animate-pulse' : 'bg-green-600 hover:bg-green-700 active:scale-95'}`}
+             >
+                {isExecuting ? <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full"></div> : <svg className="w-6 h-6 fill-current" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 001.664l-3-2z"/></svg>}
              </button>
           </div>
         </header>
 
-        <div className="flex-1 flex overflow-hidden relative">
-          <div className={`flex-1 relative bg-gray-900 h-full w-full ${isMobile && activeTab === 'chat' ? 'hidden' : 'block'}`} ref={reactFlowWrapper}>
-            
+        {/* MAIN CONTENT AREA - ADAPTÁVEL */}
+        <main className="flex-1 relative overflow-hidden flex flex-col md:flex-row">
+          
+          {/* VIEW 1: FLOW EDITOR */}
+          <div className={`absolute inset-0 md:relative md:flex-1 transition-transform duration-300 ${activeView === 'flow' ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`} ref={reactFlowWrapper}>
             <ReactFlow 
-                nodes={nodes} 
-                edges={edges} 
-                onNodesChange={onNodesChange} 
-                onEdgesChange={onEdgesChange} 
-                onConnect={onConnect} 
-                onNodeClick={onNodeClick} 
-                onPaneClick={() => setSelectedNodeId(null)} 
-                nodeTypes={nodeTypes} 
-                defaultEdgeOptions={defaultEdgeOptions}
-                fitView 
-                proOptions={{ hideAttribution: true }} 
-                minZoom={0.2}
-                maxZoom={2}
-                deleteKeyCode={['Backspace', 'Delete']}
-                multiSelectionKeyCode="Control"
-                selectionKeyCode="Shift"
+                nodes={nodes} edges={edges} 
+                onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={onNodeClick} 
+                onPaneClick={() => setSelectedNodeId(null)} nodeTypes={nodeTypes} defaultEdgeOptions={defaultEdgeOptions}
+                fitView fitViewOptions={{ padding: 0.2 }} minZoom={0.1} maxZoom={2.5} proOptions={{ hideAttribution: true }}
             >
-              <Background color="#4a5568" gap={20} size={1.5} />
+              <Background color="#4a5568" gap={20} size={1} />
               
-              <Panel position="top-left" className="flex flex-col gap-2">
-                <button onClick={() => setIsAddMenuOpen(!isAddMenuOpen)} className="bg-blue-600 hover:bg-blue-700 text-white w-10 h-10 rounded-lg shadow-lg flex items-center justify-center transition-transform active:scale-95 border border-blue-500/50">
-                    {isAddMenuOpen ? <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg> : <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}
-                </button>
-                {isAddMenuOpen && (
-                    <div className="w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl overflow-hidden animate-fade-in-up flex flex-col z-50">
-                        <div className="p-2 bg-gray-900 border-b border-gray-700 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Nós Disponíveis</div>
+              <Panel position="bottom-right" className="mb-4">
+                 <button 
+                  onClick={() => setIsAddMenuOpen(!isAddMenuOpen)} 
+                  className="bg-blue-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-90 transition-transform border-4 border-gray-950"
+                 >
+                    {isAddMenuOpen ? <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg> : <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}
+                 </button>
+                 
+                 {isAddMenuOpen && (
+                    <div className="absolute bottom-16 right-0 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl overflow-hidden animate-mobile-sheet z-50">
                         {[
                           {type: NodeType.START, label: 'Início', color: 'bg-green-500'},
                           {type: NodeType.HTTP_REQUEST, label: 'HTTP Request', color: 'bg-blue-500'},
                           {type: NodeType.IF_CONDITION, label: 'Condição IF', color: 'bg-yellow-500'},
-                          {type: NodeType.DELAY, label: 'Delay Timer', color: 'bg-purple-500'},
                           {type: NodeType.FILE_SAVE, label: 'Salvar Arquivo', color: 'bg-indigo-500'},
-                          {type: NodeType.LOGGER, label: 'Debug Log', color: 'bg-gray-500'}
                         ].map(item => (
-                            <button key={item.type} onClick={() => handleAddNode(item.type, item.label)} className="px-3 py-2 text-left text-sm hover:bg-gray-700 flex items-center gap-2 transition-colors border-b border-gray-700/30 last:border-0">
-                                <span className={`w-2 h-2 rounded-full ${item.color}`}></span> {item.label}
+                            <button key={item.type} onClick={() => handleAddNode(item.type, item.label)} className="w-full px-4 py-3 text-left text-sm hover:bg-gray-700 flex items-center gap-3 border-b border-gray-700/30 last:border-0 transition-colors">
+                                <span className={`w-3 h-3 rounded-full ${item.color}`}></span> {item.label}
                             </button>
                         ))}
                     </div>
-                )}
+                 )}
               </Panel>
 
-              <Controls className="bg-gray-800 border-gray-600 fill-white text-white rounded shadow-lg overflow-hidden" showInteractive={false} />
-              <MiniMap 
-                nodeStrokeColor="#333" 
-                nodeColor="#1a202c" 
-                maskColor="rgba(0, 0, 0, 0.4)" 
-                className="bg-gray-800 border border-gray-700 rounded-lg hidden sm:block"
-                style={{ height: 120, width: 180 }}
-              />
-
-              <Panel position="bottom-center" className="bg-gray-800/80 backdrop-blur-md border border-gray-700 rounded-full px-4 py-2 mb-4 flex gap-4 shadow-2xl items-center">
-                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mr-2">Dicas:</div>
-                 <div className="flex gap-4">
-                    <span className="text-[10px] text-gray-300 flex items-center gap-1"><kbd className="bg-gray-700 px-1 rounded border border-gray-600">DEL</kbd> Excluir</span>
-                    <span className="text-[10px] text-gray-300 flex items-center gap-1"><kbd className="bg-gray-700 px-1 rounded border border-gray-600">SHIFT</kbd> Selecionar</span>
-                    <span className="text-[10px] text-gray-300 flex items-center gap-1"><kbd className="bg-gray-700 px-1 rounded border border-gray-600">Arraste</kbd> Conectar</span>
-                 </div>
-              </Panel>
+              <Controls position="top-right" className="!bg-gray-800 !border-gray-700 !fill-white" showInteractive={false} />
             </ReactFlow>
-            
-            <NodeConfigPanel node={selectedNode} isOpen={!!selectedNode} onClose={() => setSelectedNodeId(null)} onUpdate={handleUpdateNodeConfig} onDelete={handleDeleteNode} onDuplicate={handleDuplicateNode} />
           </div>
 
-          <div className={`${isMobile ? 'absolute inset-0 z-30 bg-gray-900' : 'relative w-96 border-l border-gray-700'} ${isMobile && activeTab === 'editor' ? 'hidden' : 'flex'} flex-col transition-all duration-300`}>
-             <AIChat onImportFlow={handleImportFlow} onCloseMobile={() => setActiveTab('editor')} isMobile={isMobile} logs={logs} nodes={nodes} edges={edges} />
+          {/* VIEW 2: AI CHAT (Overlay no Mobile) */}
+          <div className={`absolute inset-0 md:relative md:w-96 md:border-l md:border-gray-700 z-40 transition-transform duration-300 ${activeView === 'chat' ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}`}>
+            <AIChat onImportFlow={(fd) => { handleLoadProject({ ...fd, id: 'temp', name: 'Fluxo IA', createdAt: Date.now(), updatedAt: Date.now(), files: [] }); setActiveView('flow'); }} isMobile={true} logs={logs} nodes={nodes} edges={edges} />
           </div>
+
+          {/* VIEW 3: TERMINAL / LOGS (Overlay no Mobile) */}
+          <div className={`absolute inset-0 md:hidden z-[45] bg-gray-950 flex flex-col transition-transform duration-300 ${activeView === 'terminal' ? 'translate-x-0' : 'translate-x-full'}`}>
+             <div className="flex bg-gray-900 border-b border-gray-700 p-1 m-2 rounded-lg">
+                <button onClick={() => setTerminalTab('logs')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-colors ${terminalTab === 'logs' ? 'bg-gray-700 text-blue-400' : 'text-gray-500'}`}>Logs</button>
+                <button onClick={() => setTerminalTab('files')} className={`flex-1 py-2 text-xs font-bold rounded-md transition-colors ${terminalTab === 'files' ? 'bg-gray-700 text-green-400' : 'text-gray-500'}`}>Arquivos ({files.length})</button>
+             </div>
+             <div className="flex-1 overflow-hidden">
+                {terminalTab === 'logs' ? <LogPanel logs={logs} /> : <FilePanel files={files} />}
+             </div>
+          </div>
+        </main>
+
+        {/* BOTTOM NAVIGATION - MOBILE ONLY */}
+        <nav className="h-16 bg-gray-900 border-t border-gray-700 flex items-center justify-around px-2 shrink-0 z-[60] md:hidden">
+          <button onClick={() => setActiveView('flow')} className={`flex flex-col items-center gap-1 transition-colors ${activeView === 'flow' ? 'text-blue-500' : 'text-gray-500'}`}>
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
+             <span className="text-[10px] font-bold">Fluxo</span>
+          </button>
+          <button onClick={() => setActiveView('chat')} className={`flex flex-col items-center gap-1 transition-colors ${activeView === 'chat' ? 'text-blue-500' : 'text-gray-500'}`}>
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+             <span className="text-[10px] font-bold">IA Chat</span>
+          </button>
+          <button onClick={() => setActiveView('terminal')} className={`flex flex-col items-center gap-1 transition-colors ${activeView === 'terminal' ? 'text-blue-500' : 'text-gray-500'}`}>
+             <div className="relative">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                {logs.some(l => l.level === 'ERROR') && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>}
+             </div>
+             <span className="text-[10px] font-bold">Execução</span>
+          </button>
+        </nav>
+
+        {/* SIDEBAR LOGS PARA DESKTOP */}
+        <div className="hidden md:flex h-40 bg-gray-900 border-t border-gray-700 overflow-hidden">
+             <div className="w-48 border-r border-gray-700 flex flex-col p-2 gap-2">
+                <button onClick={() => setTerminalTab('logs')} className={`text-left px-3 py-2 text-[11px] font-bold rounded transition-colors ${terminalTab === 'logs' ? 'bg-blue-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>TERMINAL</button>
+                <button onClick={() => setTerminalTab('files')} className={`text-left px-3 py-2 text-[11px] font-bold rounded transition-colors ${terminalTab === 'files' ? 'bg-green-600 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>ARQUIVOS ({files.length})</button>
+             </div>
+             <div className="flex-1 overflow-hidden">
+                {terminalTab === 'logs' ? <LogPanel logs={logs} /> : <FilePanel files={files} />}
+             </div>
         </div>
 
-        <div className={`${isLogOpen ? 'h-52' : 'h-9'} transition-all duration-300 shrink-0 z-50 flex flex-col bg-gray-950 border-t border-gray-700`}>
-          <div className="flex items-center justify-between px-4 py-0 bg-gray-900 border-b border-gray-700 h-9 shrink-0">
-            <div className="flex items-center h-full">
-                <button onClick={() => { setIsLogOpen(true); setBottomPanelTab('logs'); }} className={`h-full px-4 text-xs font-bold border-r border-gray-700 flex items-center gap-2 transition-colors ${bottomPanelTab === 'logs' && isLogOpen ? 'text-blue-400 bg-gray-800' : 'text-gray-400 hover:bg-gray-800'}`}>Terminal</button>
-                <button onClick={() => { setIsLogOpen(true); setBottomPanelTab('files'); }} className={`h-full px-4 text-xs font-bold border-r border-gray-700 flex items-center gap-2 transition-colors ${bottomPanelTab === 'files' && isLogOpen ? 'text-green-400 bg-gray-800' : 'text-gray-400 hover:bg-gray-800'}`}>Arquivos {files.length > 0 && `(${files.length})`}</button>
-            </div>
-            <button onClick={() => setIsLogOpen(!isLogOpen)} className="text-gray-500 hover:text-white px-2"><svg className={`w-4 h-4 transform transition-transform ${isLogOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></button>
-          </div>
-          {isLogOpen && (
-            <div className="flex-1 overflow-hidden relative">
-                <div className={`absolute inset-0 ${bottomPanelTab === 'logs' ? 'block' : 'hidden'}`}><LogPanel logs={logs} isOpen={true} /></div>
-                <div className={`absolute inset-0 ${bottomPanelTab === 'files' ? 'block' : 'hidden'}`}><FilePanel files={files} isOpen={true} /></div>
-            </div>
-          )}
-        </div>
-
+        <NodeConfigPanel node={selectedNode} isOpen={!!selectedNode} onClose={() => setSelectedNodeId(null)} onUpdate={handleUpdateNodeConfig} onDelete={handleDeleteNode} onDuplicate={() => {}} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-        <ProjectLibraryModal 
-            isOpen={isLibraryOpen} 
-            onClose={() => setIsLibraryOpen(false)} 
-            onLoadProject={handleLoadProject} 
-            currentNodesCount={nodes.length} 
-            activeProjectId={currentProject?.id}
-        />
+        <ProjectLibraryModal isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} onLoadProject={handleLoadProject} currentNodesCount={nodes.length} activeProjectId={currentProject?.id} />
       </div>
     </ReactFlowProvider>
   );

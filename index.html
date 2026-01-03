@@ -3,7 +3,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Flow Architect AI — Criado por João Layon</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/reactflow/dist/style.css" rel="stylesheet" />
@@ -28,11 +28,25 @@
         color: #e2e8f0;
         margin: 0;
         padding: 0;
+        overflow: hidden;
+        overscroll-behavior-y: contain;
       }
+      
+      /* Otimização para Mobile */
+      @media (max-width: 768px) {
+        .react-flow__handle {
+          width: 16px !important;
+          height: 16px !important;
+        }
+        .react-flow__controls {
+          bottom: 80px !important; /* Espaço para a bottom nav */
+        }
+      }
+
       /* Custom Scrollbar */
       ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 4px;
+        height: 4px;
       }
       ::-webkit-scrollbar-track {
         background: #1a202c; 
@@ -41,51 +55,24 @@
         background: #4a5568; 
         border-radius: 4px;
       }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #718096; 
-      }
 
-      /* React Flow Overrides - Estilo n8n */
+      /* React Flow Overrides */
       .react-flow__edge.selected .react-flow__edge-path {
         stroke: #60a5fa !important;
         stroke-width: 3 !important;
-        filter: drop-shadow(0 0 5px rgba(96, 165, 250, 0.5));
-      }
-      .react-flow__edge-path {
-        transition: stroke 0.2s, stroke-width 0.2s;
-        stroke-linecap: round;
-      }
-      .react-flow__connection-path {
-        stroke: #63b3ed;
-        stroke-width: 2;
-        stroke-dasharray: 5;
-        animation: dash 1s linear infinite;
-      }
-      @keyframes dash {
-        from { stroke-dashoffset: 10; }
-        to { stroke-dashoffset: 0; }
       }
       .react-flow__handle {
-        width: 12px !important;
-        height: 12px !important;
         background: #63b3ed !important;
         border: 2px solid #0d1117 !important;
-        transition: transform 0.2s;
       }
-      .react-flow__handle:hover {
-        transform: scale(1.4);
-        background: #90cdf4 !important;
+      
+      /* Animações */
+      @keyframes slideUp {
+        from { transform: translateY(100%); }
+        to { transform: translateY(0); }
       }
-      .react-flow__controls button {
-        background-color: #1a202c !important;
-        border-bottom: 1px solid #2d3748 !important;
-        fill: #e2e8f0 !important;
-      }
-      .react-flow__controls button:hover {
-        background-color: #2d3748 !important;
-      }
-      .react-flow__minimap {
-        background-color: #0d1117 !important;
+      .animate-mobile-sheet {
+        animation: slideUp 0.3s ease-out;
       }
     </style>
   <script type="importmap">
