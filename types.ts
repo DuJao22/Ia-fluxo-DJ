@@ -1,4 +1,5 @@
-import { Node, Edge } from 'reactflow';
+
+import type { Node, Edge } from 'reactflow';
 
 export enum NodeType {
   HTTP_REQUEST = 'httpRequest',

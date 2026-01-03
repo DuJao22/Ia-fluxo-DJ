@@ -1,5 +1,7 @@
+
 import React, { memo } from 'react';
-import { Handle, Position, NodeProps } from 'reactflow';
+import { Handle, Position } from 'reactflow';
+import type { NodeProps } from 'reactflow';
 import { NodeStatus, NodeType } from '../types';
 
 const CustomNode = ({ data, isConnectable, selected }: NodeProps) => {

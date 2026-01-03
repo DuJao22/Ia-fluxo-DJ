@@ -1,7 +1,7 @@
+
 import { SavedProject, FlowNode, FlowEdge, GeneratedFile } from '../types';
 
 const STORAGE_KEY = 'flow_architect_projects_v1';
-const API_KEY_STORAGE_KEY = 'flow_architect_user_api_key_v1';
 
 export const storageService = {
   getProjects: (): SavedProject[] => {
@@ -52,18 +52,5 @@ export const storageService = {
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
     }
-  },
-
-  // --- API KEY MANAGEMENT ---
-  saveApiKey: (key: string): void => {
-    localStorage.setItem(API_KEY_STORAGE_KEY, key.trim());
-  },
-
-  getApiKey: (): string | null => {
-    return localStorage.getItem(API_KEY_STORAGE_KEY);
-  },
-
-  removeApiKey: (): void => {
-    localStorage.removeItem(API_KEY_STORAGE_KEY);
   }
 };

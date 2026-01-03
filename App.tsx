@@ -1,16 +1,18 @@
 
 import React, { useCallback, useState, useEffect, useRef } from 'react';
-import ReactFlow, {
+import {
+  ReactFlow,
   addEdge,
   Background,
   Controls,
-  Connection,
-  Edge,
   useNodesState,
   useEdgesState,
-  Node,
   ReactFlowProvider,
+  MiniMap,
+  Panel,
+  MarkerType,
 } from 'reactflow';
+import type { Connection, Edge, Node } from 'reactflow';
 import CustomNode from './components/CustomNode';
 import AIChat from './components/AIChat';
 import LogPanel from './components/LogPanel';
@@ -18,6 +20,7 @@ import FilePanel from './components/FilePanel';
 import SettingsModal from './components/SettingsModal';
 import ProjectLibraryModal from './components/ProjectLibraryModal'; 
 import NodeConfigPanel from './components/NodeConfigPanel';
+import KeyStatusPanel from './components/KeyStatusPanel';
 import { INITIAL_NODES, INITIAL_EDGES, APP_NAME } from './constants';
 import { FlowEngine } from './services/flowEngine';
 import { storageService } from './services/storageService'; 
@@ -36,6 +39,16 @@ const nodeTypes = {
   start: CustomNode
 };
 
+const defaultEdgeOptions = {
+  type: 'smoothstep',
+  animated: true,
+  style: { strokeWidth: 2, stroke: '#63b3ed' },
+  markerEnd: {
+    type: MarkerType.ArrowClosed,
+    color: '#63b3ed',
+  },
+};
+
 const AUTOSAVE_KEY = 'flow_architect_autosave_v1';
 
 const App = () => {
@@ -48,8 +61,9 @@ const App = () => {
   const [isLoaded, setIsLoaded] = useState(false);
   
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  
+  const selectedNode = nodes.find(n => n.id === selectedNodeId) || null;
 
-  // Estados de Gerenciamento de Projeto
   const [currentProject, setCurrentProject] = useState<{id: string, name: string} | null>(null);
   const [isDirty, setIsDirty] = useState(false);
 
@@ -96,13 +110,12 @@ const App = () => {
     return () => clearTimeout(timeoutId);
   }, [nodes, edges, files, isLoaded, currentProject]);
 
-  // Monitorar mudanças para marcar como "sujo"
   useEffect(() => {
     if (isLoaded) setIsDirty(true);
   }, [nodes, edges]);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: Connection) => setEdges((eds) => addEdge({ ...params, ...defaultEdgeOptions }, eds)),
     [setEdges]
   );
 
@@ -155,10 +168,6 @@ const App = () => {
     setSelectedNodeId(newId);
   }, [nodes, setNodes]);
 
-  const selectedNode = nodes.find(n => n.id === selectedNodeId) as FlowNode || null;
-
-  // --- LÓGICA DE PERSISTÊNCIA ---
-
   const handleNewProject = useCallback(() => {
     if (isDirty && !window.confirm("Você tem alterações não salvas. Deseja criar um novo projeto?")) {
         return;
@@ -201,14 +210,13 @@ const App = () => {
     }));
     
     setNodes(normalizedNodes);
-    setEdges(project.edges.map(e => ({ ...e, animated: true, style: { stroke: '#63b3ed' } })));
+    setEdges(project.edges.map(e => ({ ...e, ...defaultEdgeOptions })));
     setFiles(project.files || []);
     setCurrentProject({ id: project.id, name: project.name });
     setIsDirty(false);
     setLogs([]);
   }, [setNodes, setEdges]);
 
-  // FUNÇÃO PARA BAIXAR O JSON DO PROJETO
   const handleExportProject = useCallback(() => {
     const projectData: SavedProject = {
       id: currentProject?.id || crypto.randomUUID(),
@@ -229,15 +237,6 @@ const App = () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-
-    setLogs(prev => [...prev, {
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        nodeId: 'system',
-        nodeLabel: 'System',
-        level: 'SUCCESS',
-        message: `Arquivo JSON do projeto "${projectData.name}" baixado com sucesso.`
-    }]);
   }, [nodes, edges, files, currentProject]);
 
   const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -250,16 +249,6 @@ const App = () => {
         const json = JSON.parse(event.target?.result as string);
         if (json.nodes && json.edges) {
           handleLoadProject(json);
-          setLogs(prev => [...prev, {
-            id: Date.now().toString(),
-            timestamp: new Date().toISOString(),
-            nodeId: 'system',
-            nodeLabel: 'System',
-            level: 'SUCCESS',
-            message: `Projeto "${json.name || 'Importado'}" carregado do arquivo JSON.`
-          }]);
-        } else {
-            alert("Formato de arquivo inválido. Use um JSON exportado por esta plataforma.");
         }
       } catch (err) {
         alert("Erro ao ler o arquivo JSON.");
@@ -278,11 +267,9 @@ const App = () => {
     }));
 
     const newEdges: Edge[] = flowData.edges.map((e: any) => ({
+      ...e,
       id: e.id || `e-${e.source}-${e.target}`,
-      source: e.source,
-      target: e.target,
-      animated: true,
-      style: { stroke: '#63b3ed' }
+      ...defaultEdgeOptions
     }));
 
     setNodes(newNodes);
@@ -330,6 +317,8 @@ const App = () => {
           </div>
           
           <div className="flex items-center gap-2">
+             <KeyStatusPanel />
+             
              <div className="flex md:hidden bg-gray-800 rounded-lg p-1 mr-1">
                 <button onClick={() => setActiveTab('editor')} className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${activeTab === 'editor' ? 'bg-gray-600 text-white' : 'text-gray-400'}`}>Editor</button>
                 <button onClick={() => setActiveTab('chat')} className={`px-2 py-1 rounded text-[10px] font-medium transition-colors ${activeTab === 'chat' ? 'bg-blue-600 text-white' : 'text-gray-400'}`}>Chat</button>
@@ -365,7 +354,7 @@ const App = () => {
              <button onClick={() => setIsSettingsOpen(true)} className="p-2 text-gray-400 hover:text-white bg-gray-800 rounded-md transition-colors"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
              
              <button onClick={handleRunFlow} disabled={isExecuting} className={`${isExecuting ? 'bg-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} text-white px-3 sm:px-4 py-1.5 rounded-md font-bold text-xs transition-all flex items-center gap-2 shadow-lg`}>
-               {isExecuting ? <svg className="animate-spin h-3 w-3 text-white" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z"/></svg>}
+               {isExecuting ? <svg className="animate-spin h-3 w-3 text-white" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> : <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 001.664l-3-2z"/></svg>}
                <span className="hidden sm:inline">{isExecuting ? 'RODANDO' : 'EXECUTAR'}</span>
              </button>
           </div>
@@ -373,32 +362,67 @@ const App = () => {
 
         <div className="flex-1 flex overflow-hidden relative">
           <div className={`flex-1 relative bg-gray-900 h-full w-full ${isMobile && activeTab === 'chat' ? 'hidden' : 'block'}`} ref={reactFlowWrapper}>
-            <div className="absolute top-4 left-4 z-20">
-                <button onClick={() => setIsAddMenuOpen(!isAddMenuOpen)} className="bg-blue-600 hover:bg-blue-700 text-white w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-95">
+            
+            <ReactFlow 
+                nodes={nodes} 
+                edges={edges} 
+                onNodesChange={onNodesChange} 
+                onEdgesChange={onEdgesChange} 
+                onConnect={onConnect} 
+                onNodeClick={onNodeClick} 
+                onPaneClick={() => setSelectedNodeId(null)} 
+                nodeTypes={nodeTypes} 
+                defaultEdgeOptions={defaultEdgeOptions}
+                fitView 
+                proOptions={{ hideAttribution: true }} 
+                minZoom={0.2}
+                maxZoom={2}
+                deleteKeyCode={['Backspace', 'Delete']}
+                multiSelectionKeyCode="Control"
+                selectionKeyCode="Shift"
+            >
+              <Background color="#4a5568" gap={20} size={1.5} />
+              
+              <Panel position="top-left" className="flex flex-col gap-2">
+                <button onClick={() => setIsAddMenuOpen(!isAddMenuOpen)} className="bg-blue-600 hover:bg-blue-700 text-white w-10 h-10 rounded-lg shadow-lg flex items-center justify-center transition-transform active:scale-95 border border-blue-500/50">
                     {isAddMenuOpen ? <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg> : <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>}
                 </button>
                 {isAddMenuOpen && (
-                    <div className="absolute top-12 left-0 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-xl overflow-hidden animate-fade-in-up flex flex-col z-50">
-                        <div className="p-2 bg-gray-900 border-b border-gray-700 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Adicionar Node</div>
+                    <div className="w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-2xl overflow-hidden animate-fade-in-up flex flex-col z-50">
+                        <div className="p-2 bg-gray-900 border-b border-gray-700 text-[10px] font-bold text-gray-400 uppercase tracking-widest">Nós Disponíveis</div>
                         {[
-                          {type: NodeType.START, label: 'Gatilho Inicial', color: 'bg-green-500'},
+                          {type: NodeType.START, label: 'Início', color: 'bg-green-500'},
                           {type: NodeType.HTTP_REQUEST, label: 'HTTP Request', color: 'bg-blue-500'},
                           {type: NodeType.IF_CONDITION, label: 'Condição IF', color: 'bg-yellow-500'},
                           {type: NodeType.DELAY, label: 'Delay Timer', color: 'bg-purple-500'},
                           {type: NodeType.FILE_SAVE, label: 'Salvar Arquivo', color: 'bg-indigo-500'},
-                          {type: NodeType.LOGGER, label: 'Log (Debug)', color: 'bg-gray-500'}
+                          {type: NodeType.LOGGER, label: 'Debug Log', color: 'bg-gray-500'}
                         ].map(item => (
-                            <button key={item.type} onClick={() => handleAddNode(item.type, item.label)} className="px-3 py-2 text-left text-sm hover:bg-gray-700 flex items-center gap-2 transition-colors">
+                            <button key={item.type} onClick={() => handleAddNode(item.type, item.label)} className="px-3 py-2 text-left text-sm hover:bg-gray-700 flex items-center gap-2 transition-colors border-b border-gray-700/30 last:border-0">
                                 <span className={`w-2 h-2 rounded-full ${item.color}`}></span> {item.label}
                             </button>
                         ))}
                     </div>
                 )}
-            </div>
+              </Panel>
 
-            <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={onNodeClick} onPaneClick={() => setSelectedNodeId(null)} nodeTypes={nodeTypes} fitView proOptions={{ hideAttribution: true }} minZoom={0.5}>
-              <Background color="#4a5568" gap={16} />
-              <Controls className="bg-gray-800 border-gray-600 fill-white text-white" showInteractive={false} />
+              <Controls className="bg-gray-800 border-gray-600 fill-white text-white rounded shadow-lg overflow-hidden" showInteractive={false} />
+              <MiniMap 
+                nodeStrokeColor="#333" 
+                nodeColor="#1a202c" 
+                maskColor="rgba(0, 0, 0, 0.4)" 
+                className="bg-gray-800 border border-gray-700 rounded-lg hidden sm:block"
+                style={{ height: 120, width: 180 }}
+              />
+
+              <Panel position="bottom-center" className="bg-gray-800/80 backdrop-blur-md border border-gray-700 rounded-full px-4 py-2 mb-4 flex gap-4 shadow-2xl items-center">
+                 <div className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mr-2">Dicas:</div>
+                 <div className="flex gap-4">
+                    <span className="text-[10px] text-gray-300 flex items-center gap-1"><kbd className="bg-gray-700 px-1 rounded border border-gray-600">DEL</kbd> Excluir</span>
+                    <span className="text-[10px] text-gray-300 flex items-center gap-1"><kbd className="bg-gray-700 px-1 rounded border border-gray-600">SHIFT</kbd> Selecionar</span>
+                    <span className="text-[10px] text-gray-300 flex items-center gap-1"><kbd className="bg-gray-700 px-1 rounded border border-gray-600">Arraste</kbd> Conectar</span>
+                 </div>
+              </Panel>
             </ReactFlow>
             
             <NodeConfigPanel node={selectedNode} isOpen={!!selectedNode} onClose={() => setSelectedNodeId(null)} onUpdate={handleUpdateNodeConfig} onDelete={handleDeleteNode} onDuplicate={handleDuplicateNode} />
@@ -425,7 +449,7 @@ const App = () => {
           )}
         </div>
 
-        <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} apiKeyPresent={!!process.env.API_KEY} />
+        <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
         <ProjectLibraryModal 
             isOpen={isLibraryOpen} 
             onClose={() => setIsLibraryOpen(false)} 
