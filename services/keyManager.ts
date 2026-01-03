@@ -3,7 +3,6 @@ import { MY_API_KEYS } from '../api_keys_list';
 
 /**
  * Gerenciador de Chaves de API (Load Balancer / Rotation)
- * Otimizado para ambientes de produção (Vercel) e desenvolvimento local.
  */
 
 type KeyListener = (status: string) => void;
@@ -19,30 +18,26 @@ class KeyManager {
   }
 
   private loadKeys() {
-    // 1. Prioridade para chaves do ambiente (Vercel Build Environment)
-    // Usamos split para permitir múltiplas chaves separadas por vírgula em uma única variável
+    // 1. Chaves do ambiente (Vercel)
     let envKeys: string[] = [];
     try {
       const rawEnv = process.env.API_KEY || "";
       if (rawEnv && rawEnv !== "undefined" && rawEnv !== "null") {
-        envKeys = rawEnv.split(/[\s,]+/).filter(k => k.length > 20 && k.startsWith('AIza'));
+        envKeys = rawEnv.split(/[\s,]+/).map(k => k.trim()).filter(k => k.length > 20 && k.startsWith('AIza'));
       }
-    } catch (e) {
-      console.warn("[KeyManager] Falha ao ler chaves do ambiente.");
-    }
+    } catch (e) {}
 
-    // 2. Chaves do arquivo físico local
+    // 2. Chaves do arquivo físico
     const fileKeys = Array.isArray(MY_API_KEYS) 
-      ? MY_API_KEYS.filter(k => k && k.length > 20 && k.startsWith('AIza')) 
+      ? MY_API_KEYS.map(k => k.trim()).filter(k => k && k.length > 20 && k.startsWith('AIza')) 
       : [];
     
     // 3. Mescla e remove duplicatas
     this.keys = Array.from(new Set([...envKeys, ...fileKeys]));
     
+    // Fallback para console caso não haja chaves
     if (this.keys.length === 0) {
-      console.error("[KeyManager] Nenhuma chave de API válida encontrada!");
-    } else {
-      console.log(`[KeyManager] Pool carregado com ${this.keys.length} chaves.`);
+      console.error("[KeyManager] CRÍTICO: Nenhuma chave API detectada!");
     }
     this.notify();
   }
@@ -61,30 +56,30 @@ class KeyManager {
   public getActiveKey(): string {
     if (this.keys.length === 0) return '';
     
-    // Tenta encontrar a próxima chave saudável
     let attempts = 0;
+    // Pula chaves que já falharam
     while (this.failedKeys.has(this.keys[this.currentIndex]) && attempts < this.keys.length) {
       this.currentIndex = (this.currentIndex + 1) % this.keys.length;
       attempts++;
     }
     
+    // Se todas falharam, retornamos a última mas o sistema já terá emitido erro
     return this.keys[this.currentIndex] || '';
   }
 
-  /**
-   * Marca a chave atual como falha e tenta rotacionar.
-   * Retorna true se ainda houver chaves saudáveis no pool.
-   */
   public markCurrentKeyAsFailed(): boolean {
+    if (this.keys.length === 0) return false;
+    
     const keyToMark = this.keys[this.currentIndex];
-    if (keyToMark) {
-      this.failedKeys.add(keyToMark);
-      console.error(`[KeyManager] Chave #${this.currentIndex + 1} marcada como INVÁLIDA ou ESGOTADA.`);
-    }
-
+    this.failedKeys.add(keyToMark);
+    
+    console.error(`[KeyManager] Chave #${this.currentIndex + 1} marcada como INVÁLIDA/BLOQUEADA.`);
+    
+    // Avança para a próxima
     this.currentIndex = (this.currentIndex + 1) % this.keys.length;
     this.notify();
     
+    // Retorna true se ainda houver chaves não testadas ou que não falharam
     return this.failedKeys.size < this.keys.length;
   }
 
@@ -110,7 +105,7 @@ class KeyManager {
   public getAllKeysStatus() {
       return this.keys.map((key, index) => ({
           index,
-          id: key.substring(0, 10) + "...",
+          id: key.substring(0, 8) + "...",
           isFailed: this.failedKeys.has(key),
           isActive: index === this.currentIndex
       }));

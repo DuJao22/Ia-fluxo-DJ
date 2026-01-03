@@ -43,7 +43,8 @@ export class FlowEngine {
 
   private async fetchWithRetry(url: string, options: any, nodeId: string, label: string): Promise<any> {
     let attempts = 0;
-    const maxRetries = 5;
+    const totalKeys = JSON.parse(keyManager.getStatus()).total;
+    const maxRetries = Math.max(totalKeys, 3);
 
     while (attempts < maxRetries) {
         const activeKey = keyManager.getActiveKey();
@@ -51,9 +52,11 @@ export class FlowEngine {
 
         // Injeta a chave na URL se for Google API
         if (url.includes('googleapis.com')) {
-            const sep = url.includes('?') ? '&' : '?';
-            finalUrl = url.replace(/key=[^&]*/, `key=${activeKey}`);
-            if (!finalUrl.includes('key=')) finalUrl += `${sep}key=${activeKey}`;
+            // Remove chave antiga se existir para não duplicar
+            finalUrl = url.split('?')[0];
+            const params = new URLSearchParams(url.split('?')[1] || "");
+            params.set('key', activeKey);
+            finalUrl = `${finalUrl}?${params.toString()}`;
         }
 
         try {
@@ -64,26 +67,27 @@ export class FlowEngine {
                 return await response.json();
             }
 
-            // ERROS CRÍTICOS DE CHAVE (400: Inválida, 403: Bloqueada, 429: Limite)
-            if (status === 400 || status === 403 || status === 429) {
-                const text = await response.text();
-                console.error(`[API ERROR ${status}]`, text);
+            // TRATAMENTO DE ERROS DE CHAVE (403: Referrer/Forbidden, 400: Invalid, 429: Quota)
+            if (status === 403 || status === 400 || status === 429) {
+                const errorData = await response.text();
+                console.warn(`[FlowEngine] Falha na Chave Status ${status}:`, errorData);
                 
                 if (keyManager.markCurrentKeyAsFailed()) {
-                    this.addLog(createLog(nodeId, label, 'WARN', `🔄 Chave #${keyManager.getCurrentIndex()} falhou (Status ${status}). Trocando chave...`));
+                    this.addLog(createLog(nodeId, label, 'WARN', `🔄 Chave #${keyManager.getCurrentIndex()} bloqueada (${status}). Rotacionando...`));
                     attempts++;
-                    await wait(200);
-                    continue; // Tenta de novo com a nova chave
+                    await wait(150);
+                    continue; // Tenta com a próxima chave
                 }
             }
 
             const errorText = await response.text();
-            throw new Error(`Erro API (${status}): ${errorText.substring(0, 50)}...`);
+            throw new Error(`Erro API (${status}): ${errorText.substring(0, 100)}`);
 
         } catch (err: any) {
-            if (err.name === 'TypeError' || attempts >= maxRetries - 1) throw err;
+            // Se for erro de rede ou se as tentativas acabaram
+            if (attempts >= maxRetries - 1) throw err;
             attempts++;
-            await wait(500);
+            await wait(300);
         }
     }
   }
@@ -96,16 +100,16 @@ export class FlowEngine {
     this.updateNodeStatus(node.id, NodeStatus.RUNNING);
 
     try {
-        await wait(200);
+        await wait(100);
 
         switch (type) {
           case NodeType.START:
-              this.addLog(createLog(node.id, label, 'SUCCESS', `🟢 Gatilho ativado.`));
+              this.addLog(createLog(node.id, label, 'SUCCESS', `🟢 Execução iniciada.`));
               break;
 
           case NodeType.HTTP_REQUEST:
             let url = config?.url;
-            if (!url) throw new Error("URL não configurada.");
+            if (!url) throw new Error("URL não definida no nó.");
 
             const method = (config?.method || 'GET').toUpperCase();
             const body = config?.body ? (typeof config.body === 'string' ? JSON.parse(config.body) : config.body) : undefined;
@@ -118,24 +122,24 @@ export class FlowEngine {
             
             this.context[node.id] = responseData;
             this.context['input'] = responseData; 
-            this.addLog(createLog(node.id, label, 'SUCCESS', `📦 Dados recebidos com sucesso.`));
+            this.addLog(createLog(node.id, label, 'SUCCESS', `📦 Requisição concluída.`));
             break;
 
           case NodeType.IF_CONDITION:
             const condition = config?.condition || 'true';
             const input = this.context['input'] || {};
+            // Cria um sandbox simples para a condição
             const check = new Function('input', `try { return ${condition}; } catch(e) { return false; }`);
-            const result = check(input);
-            this.addLog(createLog(node.id, label, result ? 'SUCCESS' : 'WARN', `⚖️ Condição: ${result ? 'VERDADEIRO' : 'FALSO'}`));
+            const result = !!check(input);
+            this.addLog(createLog(node.id, label, result ? 'SUCCESS' : 'WARN', `⚖️ Condição resultou em: ${result.toString().toUpperCase()}`));
             this.context[node.id] = result;
-            if (!result) return false; // Para o fluxo se o IF for falso (opcional dependendo da lógica)
             break;
 
           case NodeType.FILE_SAVE:
-            const fileName = config?.fileName || `file-${Date.now()}.txt`;
+            const fileName = config?.fileName || `output-${Date.now()}.txt`;
             let content = this.context['input'];
             
-            // Extrai texto do Gemini se for o caso
+            // Se vier do Gemini, extrai o texto principal
             if (content?.candidates?.[0]?.content?.parts?.[0]?.text) {
                 content = content.candidates[0].content.parts[0].text;
             }
@@ -149,7 +153,7 @@ export class FlowEngine {
                   timestamp: Date.now(),
                   nodeId: node.id
               });
-              this.addLog(createLog(node.id, label, 'SUCCESS', `💾 Arquivo "${fileName}" gerado.`));
+              this.addLog(createLog(node.id, label, 'SUCCESS', `💾 Arquivo gerado: ${fileName}`));
             }
             break;
         }
@@ -182,6 +186,6 @@ export class FlowEngine {
         queue.push(...nextNodes);
       }
     }
-    this.addLog(createLog('system', 'Fluxo', 'INFO', `🏁 Execução finalizada.`));
+    this.addLog(createLog('system', 'Engine', 'INFO', `🏁 Fluxo finalizado.`));
   }
 }
