@@ -69,13 +69,20 @@ export class FlowEngine {
             // LÊ O ERRO UMA ÚNICA VEZ PARA EVITAR "STREAM ALREADY READ"
             const errorText = await response.text();
 
-            // TRATAMENTO DE ERROS DE CHAVE (403: Referrer/Forbidden, 400: Invalid, 429: Quota)
+            // TRATAMENTO DE ERROS DE CHAVE (403: Referrer/Forbidden/Leaked, 400: Invalid, 429: Quota)
             if (status === 403 || status === 400 || status === 429) {
-                console.warn(`[FlowEngine] Falha na Chave (Status ${status}):`, errorText.substring(0, 200));
+                const isLeaked = errorText.toLowerCase().includes('leaked');
+                let logMsg = `🔄 Chave #${keyManager.getCurrentIndex() + 1} falhou (${status}). Rotacionando...`;
+                
+                if (isLeaked) {
+                    logMsg = `🚫 Chave #${keyManager.getCurrentIndex() + 1} identificada como VAZADA. Removendo do pool...`;
+                }
+
+                console.warn(`[FlowEngine] ${logMsg}`, errorText.substring(0, 100));
                 
                 // Tenta rotacionar a chave
                 if (keyManager.markCurrentKeyAsFailed()) {
-                    this.addLog(createLog(nodeId, label, 'WARN', `🔄 Chave #${keyManager.getCurrentIndex()} falhou (${status}). Rotacionando...`));
+                    this.addLog(createLog(nodeId, label, 'WARN', logMsg));
                     attempts++;
                     await wait(200);
                     continue; // Tenta com a próxima chave
