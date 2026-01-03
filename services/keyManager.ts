@@ -18,11 +18,19 @@ class KeyManager {
   }
 
   private loadKeys() {
-    const fileKeys = Array.isArray(MY_API_KEYS) ? MY_API_KEYS.filter(k => k && k.length > 5 && !k.includes('SUA_CHAVE')) : [];
-    const envValue = process.env.API_KEY || '';
-    const envKeys = envValue.split(/[\s,]+/).map(k => k.trim()).filter(k => k && k.length > 5);
+    // 1. Chaves do arquivo físico (mais seguras no Vercel se estiverem no código)
+    const fileKeys = Array.isArray(MY_API_KEYS) 
+      ? MY_API_KEYS.filter(k => k && typeof k === 'string' && k.length > 20 && !k.includes('SUA_CHAVE')) 
+      : [];
     
+    // 2. Chave do ambiente (Vercel Dashboard)
+    const envValue = process.env.API_KEY || '';
+    const envKeys = envValue.split(/[\s,]+/).map(k => k.trim()).filter(k => k && k.length > 20);
+    
+    // 3. Mescla e remove duplicatas
     this.keys = Array.from(new Set([...fileKeys, ...envKeys]));
+    
+    console.log(`[KeyManager] Pool inicializado com ${this.keys.length} chaves válidas.`);
     this.notify();
   }
 
@@ -41,12 +49,15 @@ class KeyManager {
     if (this.keys.length === 0) return '';
     
     let attempts = 0;
+    // Tenta encontrar uma chave que não falhou
     while (this.failedKeys.has(this.keys[this.currentIndex]) && attempts < this.keys.length) {
       this.currentIndex = (this.currentIndex + 1) % this.keys.length;
       attempts++;
     }
     
+    // Se todas falharam, resetamos para tentar novamente (pode ter sido um erro temporário de rede)
     if (attempts >= this.keys.length && this.keys.length > 0) {
+        console.warn("[KeyManager] Todas as chaves do pool falharam. Tentando resetar status...");
         this.failedKeys.clear();
         this.currentIndex = 0;
     }
@@ -54,27 +65,33 @@ class KeyManager {
     return this.keys[this.currentIndex];
   }
 
+  /**
+   * Marca a chave como falha e retorna se ainda existem chaves disponíveis
+   */
   public markCurrentKeyAsFailed(): boolean {
     if (this.keys.length === 0) return false;
     
     const failedKey = this.keys[this.currentIndex];
     this.failedKeys.add(failedKey);
     
+    console.error(`[KeyManager] Chave #${this.currentIndex + 1} marcada como INVÁLIDA/ESGOTADA.`);
+    
+    // Move para a próxima
     this.currentIndex = (this.currentIndex + 1) % this.keys.length;
     this.notify();
-    return true;
+    
+    return this.failedKeys.size < this.keys.length;
   }
 
   public getStatus() {
     return JSON.stringify({
         total: this.keys.length,
-        failed: Array.from(this.failedKeys).length,
+        failed: this.failedKeys.size,
         current: this.currentIndex,
         healthy: this.keys.length - this.failedKeys.size
     });
   }
 
-  // Add the missing getCurrentIndex method used in geminiService
   public getCurrentIndex(): number {
     return this.currentIndex;
   }
@@ -88,7 +105,7 @@ class KeyManager {
   public getAllKeysStatus() {
       return this.keys.map((key, index) => ({
           index,
-          id: key.substring(0, 8) + "...",
+          id: key.substring(0, 10) + "...",
           isFailed: this.failedKeys.has(key),
           isActive: index === this.currentIndex
       }));
