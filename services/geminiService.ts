@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_PROMPT } from '../constants';
 import { FlowSchema, FlowContext } from '../types';
@@ -6,7 +5,7 @@ import { keyManager } from './keyManager';
 
 export const generateFlowFromPrompt = async (userPrompt: string, context?: FlowContext): Promise<{ text: string, flowData?: FlowSchema }> => {
   const statusInfo = JSON.parse(keyManager.getStatus());
-  const maxRetries = Math.max(statusInfo.total * 2, 5); // Tenta o pool inteiro duas vezes se necessário
+  const maxRetries = Math.max(statusInfo.total * 2, 3); 
   
   let lastError = "";
 
@@ -62,7 +61,7 @@ export const generateFlowFromPrompt = async (userPrompt: string, context?: FlowC
 
     } catch (error: any) {
       const errorMsg = error.message || "";
-      const isForbidden = error.status === 403 || errorMsg.includes('403') || errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('restricted');
+      const isForbidden = error.status === 403 || errorMsg.includes('403') || errorMsg.includes('API_KEY_INVALID');
       const isQuota = error.status === 429 || errorMsg.includes('429') || errorMsg.includes('quota');
       
       console.error(`[IA Attempt ${attempt + 1}] Falha na Chave #${keyManager.getCurrentIndex() + 1}: ${errorMsg}`);
@@ -82,8 +81,14 @@ export const generateFlowFromPrompt = async (userPrompt: string, context?: FlowC
     }
   }
   
+  // Mensagem final mais descritiva
+  let userHelp = "";
+  if (lastError.includes('403')) {
+      userHelp = "\n\n💡 **Dica para Deploy (Vercel/Netlify):**\nO erro 403 geralmente significa que suas chaves no Google Cloud têm restrição de domínio (Referrer). Adicione o domínio do seu site hospedado nas configurações da chave ou remova as restrições de site.";
+  }
+
   return { 
-    text: `❌ **Falha Total**: Todas as chaves do pool retornaram erro 403 (Proibido). Isso geralmente ocorre por restrição de domínio nas chaves do Google Cloud. Erro final: ${lastError}`, 
+    text: `❌ **Falha Total no Pool de Chaves**\n\nTodas as ${statusInfo.total} chaves retornaram erro. A última falha foi: ${lastError}${userHelp}`, 
     flowData: undefined 
   };
 };

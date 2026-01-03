@@ -1,4 +1,3 @@
-
 import { FlowNode, FlowEdge, NodeType, NodeStatus, LogEntry, ExecutionContext, GeneratedFile } from '../types';
 import { keyManager } from './keyManager';
 
@@ -44,19 +43,19 @@ export class FlowEngine {
   private async fetchWithRetry(url: string, options: any, nodeId: string, label: string): Promise<any> {
     let attempts = 0;
     const totalKeys = JSON.parse(keyManager.getStatus()).total;
-    const maxRetries = Math.max(totalKeys, 3);
+    // Se tivermos chaves no pool, tentamos rodar o pool inteiro. Se não, tentamos 3 vezes padrão.
+    const maxRetries = totalKeys > 0 ? totalKeys + 1 : 3;
 
     while (attempts < maxRetries) {
         const activeKey = keyManager.getActiveKey();
         let finalUrl = url;
 
         // Injeta a chave na URL se for Google API
-        if (url.includes('googleapis.com')) {
+        if (url.includes('googleapis.com') && activeKey) {
             // Remove chave antiga se existir para não duplicar
-            finalUrl = url.split('?')[0];
-            const params = new URLSearchParams(url.split('?')[1] || "");
-            params.set('key', activeKey);
-            finalUrl = `${finalUrl}?${params.toString()}`;
+            const urlObj = new URL(url);
+            urlObj.searchParams.set('key', activeKey);
+            finalUrl = urlObj.toString();
         }
 
         try {
@@ -67,27 +66,30 @@ export class FlowEngine {
                 return await response.json();
             }
 
+            // LÊ O ERRO UMA ÚNICA VEZ PARA EVITAR "STREAM ALREADY READ"
+            const errorText = await response.text();
+
             // TRATAMENTO DE ERROS DE CHAVE (403: Referrer/Forbidden, 400: Invalid, 429: Quota)
             if (status === 403 || status === 400 || status === 429) {
-                const errorData = await response.text();
-                console.warn(`[FlowEngine] Falha na Chave Status ${status}:`, errorData);
+                console.warn(`[FlowEngine] Falha na Chave (Status ${status}):`, errorText.substring(0, 200));
                 
+                // Tenta rotacionar a chave
                 if (keyManager.markCurrentKeyAsFailed()) {
-                    this.addLog(createLog(nodeId, label, 'WARN', `🔄 Chave #${keyManager.getCurrentIndex()} bloqueada (${status}). Rotacionando...`));
+                    this.addLog(createLog(nodeId, label, 'WARN', `🔄 Chave #${keyManager.getCurrentIndex()} falhou (${status}). Rotacionando...`));
                     attempts++;
-                    await wait(150);
+                    await wait(200);
                     continue; // Tenta com a próxima chave
                 }
             }
 
-            const errorText = await response.text();
-            throw new Error(`Erro API (${status}): ${errorText.substring(0, 100)}`);
+            // Se não for erro de chave ou se acabaram as chaves, lança o erro final
+            throw new Error(`Erro API (${status}): ${errorText.substring(0, 300)}`);
 
         } catch (err: any) {
-            // Se for erro de rede ou se as tentativas acabaram
+            // Se for erro de rede (fetch failed) ou se as tentativas acabaram
             if (attempts >= maxRetries - 1) throw err;
             attempts++;
-            await wait(300);
+            await wait(500);
         }
     }
   }
