@@ -3,6 +3,36 @@ import { SYSTEM_PROMPT } from '../constants';
 import { FlowSchema, FlowContext } from '../types';
 import { keyManager } from './keyManager';
 
+/**
+ * Valida uma chave de API fazendo uma requisição mínima
+ */
+export const validateGeminiKey = async (apiKey: string): Promise<{ valid: boolean; error?: string }> => {
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    
+    // Tenta gerar 1 token apenas para validar a conexão/autenticação
+    await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: { role: 'user', parts: [{ text: 'Ping' }] },
+      config: { 
+        maxOutputTokens: 1,
+      }
+    });
+
+    return { valid: true };
+  } catch (error: any) {
+    console.error("Key Validation Error:", error);
+    let msg = "Erro desconhecido";
+    
+    if (error.status === 403 || error.message?.includes('403')) msg = "Chave Inválida ou Restrita (403)";
+    else if (error.status === 400 || error.message?.includes('API_KEY_INVALID')) msg = "Chave Inexistente/Malformada";
+    else if (error.message?.includes('quota')) msg = "Quota Excedida (Sem créditos)";
+    else msg = error.message?.substring(0, 50) + "...";
+
+    return { valid: false, error: msg };
+  }
+};
+
 export const generateFlowFromPrompt = async (userPrompt: string, context?: FlowContext): Promise<{ text: string, flowData?: FlowSchema }> => {
   const statusInfo = JSON.parse(keyManager.getStatus());
   const maxRetries = Math.max(statusInfo.total * 2, 3); 

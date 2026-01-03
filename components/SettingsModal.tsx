@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CREATOR_CREDIT } from '../constants';
 import { keyManager } from '../services/keyManager';
+import { validateGeminiKey } from '../services/geminiService';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -9,31 +10,52 @@ interface SettingsModalProps {
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   const [apiKey, setApiKey] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       const storedKey = localStorage.getItem('gemini_api_key') || '';
       setApiKey(storedKey);
-      setSaved(false);
+      setValidationStatus('idle');
+      setErrorMessage('');
     }
   }, [isOpen]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // 1. Se estiver vazio, remove a chave
     if (!apiKey.trim()) {
       localStorage.removeItem('gemini_api_key');
-    } else {
-      localStorage.setItem('gemini_api_key', apiKey.trim());
-    }
-    
-    // Atualiza o gerenciador de chaves imediatamente
-    keyManager.setCustomKey(apiKey.trim());
-    
-    setSaved(true);
-    setTimeout(() => {
-      setSaved(false);
+      keyManager.setCustomKey('');
       onClose();
-    }, 1000);
+      return;
+    }
+
+    // 2. Inicia validação
+    setIsValidating(true);
+    setValidationStatus('idle');
+    setErrorMessage('');
+
+    const result = await validateGeminiKey(apiKey.trim());
+
+    setIsValidating(false);
+
+    if (result.valid) {
+        // 3. Sucesso: Salva e fecha
+        setValidationStatus('success');
+        localStorage.setItem('gemini_api_key', apiKey.trim());
+        keyManager.setCustomKey(apiKey.trim());
+        
+        // Pequeno delay visual para mostrar o sucesso
+        setTimeout(() => {
+            onClose();
+        }, 800);
+    } else {
+        // 4. Erro: Mostra mensagem e não salva
+        setValidationStatus('error');
+        setErrorMessage(result.error || 'Chave inválida');
+    }
   };
 
   if (!isOpen) return null;
@@ -46,7 +68,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
             Configurações
           </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+          <button onClick={onClose} disabled={isValidating} className="text-gray-400 hover:text-white transition-colors disabled:opacity-50">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
@@ -63,19 +85,50 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
                 <input 
                   type="password" 
                   value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setValidationStatus('idle'); // Reseta status ao digitar
+                      setErrorMessage('');
+                  }}
+                  disabled={isValidating}
                   placeholder="Cole sua chave AIza... aqui"
-                  className="w-full bg-gray-950 border border-gray-700 rounded-lg p-3 text-sm text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all font-mono"
+                  className={`w-full bg-gray-950 border rounded-lg p-3 text-sm text-white focus:outline-none transition-all font-mono
+                    ${validationStatus === 'error' ? 'border-red-500 focus:ring-red-500' : 
+                      validationStatus === 'success' ? 'border-green-500 focus:ring-green-500' : 
+                      'border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}
+                  `}
                 />
-                {apiKey && (
-                  <div className="absolute right-3 top-3">
-                    <svg className="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                  </div>
+                
+                {/* ÍCONE DE STATUS DENTRO DO INPUT */}
+                <div className="absolute right-3 top-3">
+                  {isValidating ? (
+                     <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                  ) : validationStatus === 'success' ? (
+                     <svg className="w-5 h-5 text-green-500 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                  ) : validationStatus === 'error' ? (
+                     <svg className="w-5 h-5 text-red-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  ) : null}
+                </div>
+            </div>
+
+            {/* MENSAGEM DE ERRO/SUCESSO */}
+            <div className="min-h-[20px]">
+                {validationStatus === 'error' && (
+                    <p className="text-[10px] text-red-400 font-bold flex items-center gap-1 animate-fade-in">
+                        ❌ {errorMessage}
+                    </p>
+                )}
+                {validationStatus === 'success' && (
+                    <p className="text-[10px] text-green-400 font-bold flex items-center gap-1 animate-fade-in">
+                        ✅ Chave verificada e conectada!
+                    </p>
+                )}
+                {validationStatus === 'idle' && !isValidating && (
+                    <p className="text-[9px] text-gray-600">
+                        Clique em verificar para testar a conexão com o Google.
+                    </p>
                 )}
             </div>
-            <p className="text-[9px] text-gray-600">
-               Sua chave é salva apenas no seu navegador (LocalStorage) e enviada diretamente ao Google.
-            </p>
           </div>
 
           <div className="h-px bg-gray-800"></div>
@@ -86,7 +139,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
             <div className="bg-gray-800/50 rounded-lg p-4 text-xs text-gray-400 space-y-2 border border-gray-700/50">
               <div className="flex justify-between">
                 <span>Versão</span>
-                <span className="text-gray-200">1.4.0 (BYOK Edition)</span>
+                <span className="text-gray-200">1.4.1 (Live Check Edition)</span>
               </div>
               <div className="flex justify-between">
                 <span>Engine</span>
@@ -103,15 +156,34 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
         <div className="p-4 border-t border-gray-700 bg-gray-800 flex justify-end gap-2">
           <button 
             onClick={onClose}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm font-medium transition-colors"
+            disabled={isValidating}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
           >
             Cancelar
           </button>
+          
           <button 
             onClick={handleSave}
-            className={`px-6 py-2 rounded-md text-sm font-bold transition-all shadow-lg ${saved ? 'bg-green-600 text-white' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/30'}`}
+            disabled={isValidating}
+            className={`px-6 py-2 rounded-md text-sm font-bold transition-all shadow-lg flex items-center gap-2
+                ${isValidating 
+                    ? 'bg-blue-800 text-blue-200 cursor-wait' 
+                    : validationStatus === 'success'
+                        ? 'bg-green-600 text-white shadow-green-900/30'
+                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/30'
+                }
+            `}
           >
-            {saved ? 'Salvo!' : 'Salvar Configurações'}
+            {isValidating ? (
+                <>
+                    <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
+                    Testando...
+                </>
+            ) : validationStatus === 'success' ? (
+                'Salvo com Sucesso!'
+            ) : (
+                'Verificar e Salvar'
+            )}
           </button>
         </div>
       </div>
