@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { CREATOR_CREDIT } from '../constants';
 import { keyManager } from '../services/keyManager';
@@ -24,7 +25,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   }, [isOpen]);
 
   const handleSave = async () => {
-    // 1. Se estiver vazio, remove a chave
     if (!apiKey.trim()) {
       localStorage.removeItem('gemini_api_key');
       keyManager.setCustomKey('');
@@ -32,27 +32,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
       return;
     }
 
-    // 2. Inicia validação
     setIsValidating(true);
     setValidationStatus('idle');
     setErrorMessage('');
 
     const result = await validateGeminiKey(apiKey.trim());
-
     setIsValidating(false);
 
     if (result.valid) {
-        // 3. Sucesso: Salva e fecha
         setValidationStatus('success');
         localStorage.setItem('gemini_api_key', apiKey.trim());
         keyManager.setCustomKey(apiKey.trim());
-        
-        // Pequeno delay visual para mostrar o sucesso
-        setTimeout(() => {
-            onClose();
-        }, 800);
+        setTimeout(() => onClose(), 800);
     } else {
-        // 4. Erro: Mostra mensagem e não salva
         setValidationStatus('error');
         setErrorMessage(result.error || 'Chave inválida');
     }
@@ -61,103 +53,88 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-2xl w-full max-w-md overflow-hidden animate-fade-in-up">
+    <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center bg-black/70 backdrop-blur-sm animate-fade-in">
+      <div 
+        className="bg-gray-900 border-t md:border border-gray-700 rounded-t-2xl md:rounded-lg shadow-2xl w-full max-w-md overflow-hidden animate-slide-up md:animate-fade-in-up max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle de arrastar para mobile */}
+        <div className="w-full flex justify-center pt-3 pb-1 md:hidden" onClick={onClose}>
+            <div className="w-12 h-1.5 bg-gray-700 rounded-full"></div>
+        </div>
+
         <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
             <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-            Configurações
+            Configurações API
           </h2>
-          <button onClick={onClose} disabled={isValidating} className="text-gray-400 hover:text-white transition-colors disabled:opacity-50">
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors p-2">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
         
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
           
-          {/* API KEY INPUT */}
           <div className="space-y-2">
-            <label className="text-xs font-bold text-blue-400 uppercase tracking-wider block">Chave de API Gemini (Google AI)</label>
-            <p className="text-[10px] text-gray-500 mb-2">
-              Necessário para gerar fluxos com IA. Obtenha sua chave gratuita no <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline hover:text-blue-300">Google AI Studio</a>.
+            <label className="text-xs font-bold text-blue-400 uppercase tracking-wider block">Chave Gemini (Google AI)</label>
+            <p className="text-[11px] text-gray-500 mb-2 leading-tight">
+              A chave é necessária para corrigir o erro 403 e usar o Chat. Obtenha grátis no <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 underline font-bold">Google AI Studio</a>.
             </p>
             <div className="relative">
                 <input 
-                  type="password" 
+                  type="text" 
                   value={apiKey}
                   onChange={(e) => {
                       setApiKey(e.target.value);
-                      setValidationStatus('idle'); // Reseta status ao digitar
+                      setValidationStatus('idle');
                       setErrorMessage('');
                   }}
                   disabled={isValidating}
-                  placeholder="Cole sua chave AIza... aqui"
-                  className={`w-full bg-gray-950 border rounded-lg p-3 text-sm text-white focus:outline-none transition-all font-mono
-                    ${validationStatus === 'error' ? 'border-red-500 focus:ring-red-500' : 
-                      validationStatus === 'success' ? 'border-green-500 focus:ring-green-500' : 
+                  placeholder="Cole sua chave AIza..."
+                  className={`w-full bg-gray-950 border rounded-xl p-4 text-base text-white focus:outline-none transition-all font-mono shadow-inner
+                    ${validationStatus === 'error' ? 'border-red-500 focus:ring-1 focus:ring-red-500' : 
+                      validationStatus === 'success' ? 'border-green-500 focus:ring-1 focus:ring-green-500' : 
                       'border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}
                   `}
                 />
                 
-                {/* ÍCONE DE STATUS DENTRO DO INPUT */}
-                <div className="absolute right-3 top-3">
+                <div className="absolute right-3 top-3.5">
                   {isValidating ? (
                      <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                   ) : validationStatus === 'success' ? (
-                     <svg className="w-5 h-5 text-green-500 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                     <svg className="w-6 h-6 text-green-500 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                   ) : validationStatus === 'error' ? (
-                     <svg className="w-5 h-5 text-red-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                     <svg className="w-6 h-6 text-red-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   ) : null}
                 </div>
             </div>
 
-            {/* MENSAGEM DE ERRO/SUCESSO */}
             <div className="min-h-[20px]">
                 {validationStatus === 'error' && (
-                    <p className="text-[10px] text-red-400 font-bold flex items-center gap-1 animate-fade-in">
+                    <p className="text-xs text-red-400 font-bold flex items-center gap-1 animate-fade-in mt-1">
                         ❌ {errorMessage}
                     </p>
                 )}
                 {validationStatus === 'success' && (
-                    <p className="text-[10px] text-green-400 font-bold flex items-center gap-1 animate-fade-in">
-                        ✅ Chave verificada e conectada!
-                    </p>
-                )}
-                {validationStatus === 'idle' && !isValidating && (
-                    <p className="text-[9px] text-gray-600">
-                        Clique em verificar para testar a conexão com o Google.
+                    <p className="text-xs text-green-400 font-bold flex items-center gap-1 animate-fade-in mt-1">
+                        ✅ Chave salva e pronta para uso!
                     </p>
                 )}
             </div>
           </div>
-
-          <div className="h-px bg-gray-800"></div>
-
-          {/* System Info */}
-          <div>
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Sobre o Sistema</h3>
-            <div className="bg-gray-800/50 rounded-lg p-4 text-xs text-gray-400 space-y-2 border border-gray-700/50">
-              <div className="flex justify-between">
+          
+          <div className="bg-gray-800/50 rounded-xl p-4 text-xs text-gray-400 space-y-2 border border-gray-700/50">
+             <div className="flex justify-between">
                 <span>Versão</span>
-                <span className="text-gray-200">1.4.1 (Live Check Edition)</span>
+                <span className="text-gray-200">1.5.0 Mobile-First</span>
               </div>
-              <div className="flex justify-between">
-                <span>Engine</span>
-                <span className="text-gray-200">React Flow + Gemini 3 Flash</span>
-              </div>
-              <div className="flex justify-between border-t border-gray-700 pt-2 mt-2">
-                <span>Developer</span>
-                <span className="text-gray-200">{CREATOR_CREDIT.replace('Criado por ', '')}</span>
-              </div>
-            </div>
           </div>
         </div>
 
-        <div className="p-4 border-t border-gray-700 bg-gray-800 flex justify-end gap-2">
+        <div className="p-4 border-t border-gray-700 bg-gray-800 flex gap-3 pb-[max(16px,env(safe-area-inset-bottom))]">
           <button 
             onClick={onClose}
-            disabled={isValidating}
-            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+            className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl text-sm font-bold transition-colors"
           >
             Cancelar
           </button>
@@ -165,25 +142,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
           <button 
             onClick={handleSave}
             disabled={isValidating}
-            className={`px-6 py-2 rounded-md text-sm font-bold transition-all shadow-lg flex items-center gap-2
+            className={`flex-1 py-3 rounded-xl text-sm font-black transition-all shadow-lg flex items-center justify-center gap-2
                 ${isValidating 
                     ? 'bg-blue-800 text-blue-200 cursor-wait' 
                     : validationStatus === 'success'
                         ? 'bg-green-600 text-white shadow-green-900/30'
-                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/30'
+                        : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/30 active:scale-95'
                 }
             `}
           >
-            {isValidating ? (
-                <>
-                    <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></span>
-                    Testando...
-                </>
-            ) : validationStatus === 'success' ? (
-                'Salvo com Sucesso!'
-            ) : (
-                'Verificar e Salvar'
-            )}
+            {isValidating ? 'Validando...' : validationStatus === 'success' ? 'SALVO' : 'SALVAR CHAVE'}
           </button>
         </div>
       </div>

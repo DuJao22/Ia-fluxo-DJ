@@ -140,34 +140,36 @@ const App = () => {
     <ReactFlowProvider>
       <div className="flex h-[100dvh] w-screen overflow-hidden flex-col bg-gray-950 text-white select-none">
         
-        {/* HEADER - RESPONSIVO */}
-        <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-4 shrink-0 z-40 shadow-xl pt-[env(safe-area-inset-top)]">
+        {/* HEADER - RESPONSIVO E AMPLIADO PARA TOQUE */}
+        <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-3 md:px-4 shrink-0 z-40 shadow-xl pt-[env(safe-area-inset-top)]">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-blue-600 rounded flex items-center justify-center font-black text-xs shadow-lg shadow-blue-900/20">F</div>
+            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-sm shadow-lg shadow-blue-900/20">F</div>
             <div className="flex flex-col">
-                <h1 className="font-black text-[10px] tracking-tighter uppercase leading-none">{APP_NAME}</h1>
-                <span className="text-[8px] text-gray-500 font-mono mt-0.5 truncate max-w-[80px]">{currentProject?.name || 'Local'}</span>
+                <h1 className="font-black text-[11px] md:text-xs tracking-tighter uppercase leading-none text-white">{APP_NAME}</h1>
+                <span className="text-[9px] text-gray-500 font-mono mt-0.5 truncate max-w-[100px]">{currentProject?.name || 'Projeto Local'}</span>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-             <KeyStatusPanel />
+          <div className="flex items-center gap-3">
+             <div className="hidden md:block">
+                 <KeyStatusPanel />
+             </div>
              
-             {/* BOTÃO DE CONFIGURAÇÕES (API KEY) */}
+             {/* BOTÃO DE CONFIGURAÇÕES (API KEY) - AUMENTADO */}
              <button 
                 onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center justify-center w-9 h-9 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors border border-gray-700"
+                className="flex items-center justify-center w-10 h-10 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors border border-gray-700 shadow-md active:scale-95"
                 title="Configurações (API Keys)"
              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
              </button>
 
              <button 
                 onClick={handleRunFlow} 
                 disabled={isExecuting}
-                className={`flex items-center justify-center w-9 h-9 rounded-lg transition-all ${isExecuting ? 'bg-blue-900/50 animate-pulse' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/40 active:scale-90'}`}
+                className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all ${isExecuting ? 'bg-blue-900/50 animate-pulse' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/40 active:scale-90'}`}
              >
-                {isExecuting ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent animate-spin rounded-full"></div> : <svg className="w-4 h-4 fill-white" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 001.664l-3-2z"/></svg>}
+                {isExecuting ? <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full"></div> : <svg className="w-5 h-5 fill-white" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 001.664l-3-2z"/></svg>}
              </button>
           </div>
         </header>
@@ -223,8 +225,8 @@ const App = () => {
           <div className={`flex-none h-full bg-gray-950 z-20 transition-all ${activeTab === 'terminal' ? 'w-full' : 'hidden md:hidden'}`}>
              <div className="flex flex-col h-full">
                 <div className="flex bg-gray-900 p-1 border-b border-gray-800">
-                    <button onClick={() => setTerminalSubTab('logs')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded transition-all ${terminalSubTab === 'logs' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>Logs</button>
-                    <button onClick={() => setTerminalSubTab('files')} className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded transition-all ${terminalSubTab === 'files' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>Arquivos ({files.length})</button>
+                    <button onClick={() => setTerminalSubTab('logs')} className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest rounded transition-all ${terminalSubTab === 'logs' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>Logs</button>
+                    <button onClick={() => setTerminalSubTab('files')} className={`flex-1 py-3 text-[11px] font-black uppercase tracking-widest rounded transition-all ${terminalSubTab === 'files' ? 'bg-blue-600 text-white' : 'text-gray-500'}`}>Arquivos ({files.length})</button>
                 </div>
                 <div className="flex-1 overflow-hidden">
                     {terminalSubTab === 'logs' ? <LogPanel logs={logs} /> : <FilePanel files={files} />}
@@ -234,27 +236,27 @@ const App = () => {
         </main>
 
         {/* BOTTOM NAV - MOBILE */}
-        <nav className="h-16 bg-gray-900 border-t border-gray-800 flex items-center justify-around px-2 shrink-0 z-50 md:hidden pb-[env(safe-area-inset-bottom)]">
-          <button onClick={() => setActiveTab('flow')} className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all ${activeTab === 'flow' ? 'text-blue-500' : 'text-gray-500'}`}>
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
-             <span className="text-[8px] font-black uppercase tracking-tighter">Fluxo</span>
+        <nav className="h-[60px] bg-gray-900 border-t border-gray-800 flex items-center justify-around px-2 shrink-0 z-50 md:hidden pb-[env(safe-area-inset-bottom)]">
+          <button onClick={() => setActiveTab('flow')} className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all py-1 ${activeTab === 'flow' ? 'text-blue-500' : 'text-gray-500'}`}>
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" /></svg>
+             <span className="text-[9px] font-black uppercase tracking-tighter">Fluxo</span>
           </button>
-          <button onClick={() => setActiveTab('chat')} className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all ${activeTab === 'chat' ? 'text-blue-500' : 'text-gray-500'}`}>
+          <button onClick={() => setActiveTab('chat')} className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all py-1 ${activeTab === 'chat' ? 'text-blue-500' : 'text-gray-500'}`}>
              <div className="relative">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
              </div>
-             <span className="text-[8px] font-black uppercase tracking-tighter">AI Chat</span>
+             <span className="text-[9px] font-black uppercase tracking-tighter">AI Chat</span>
           </button>
-          <button onClick={() => setActiveTab('terminal')} className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all ${activeTab === 'terminal' ? 'text-blue-500' : 'text-gray-500'}`}>
+          <button onClick={() => setActiveTab('terminal')} className={`flex-1 flex flex-col items-center justify-center gap-1 transition-all py-1 ${activeTab === 'terminal' ? 'text-blue-500' : 'text-gray-500'}`}>
              <div className="relative">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                {logs.some(l => l.level === 'ERROR') && <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full border border-gray-900"></span>}
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                {logs.some(l => l.level === 'ERROR') && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border border-gray-900"></span>}
              </div>
-             <span className="text-[8px] font-black uppercase tracking-tighter">Logs</span>
+             <span className="text-[9px] font-black uppercase tracking-tighter">Logs</span>
           </button>
-          <button onClick={() => setIsLibraryOpen(true)} className="flex-1 flex flex-col items-center justify-center gap-1 text-gray-500">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
-             <span className="text-[8px] font-black uppercase tracking-tighter">Menu</span>
+          <button onClick={() => setIsLibraryOpen(true)} className="flex-1 flex flex-col items-center justify-center gap-1 text-gray-500 py-1">
+             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
+             <span className="text-[9px] font-black uppercase tracking-tighter">Menu</span>
           </button>
         </nav>
 
