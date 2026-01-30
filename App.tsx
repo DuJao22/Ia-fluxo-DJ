@@ -18,11 +18,13 @@ import LogPanel from './components/LogPanel';
 import FilePanel from './components/FilePanel';
 import SettingsModal from './components/SettingsModal';
 import ProjectLibraryModal from './components/ProjectLibraryModal'; 
+import FlowJsonModal from './components/FlowJsonModal'; // NEW
 import NodeConfigPanel from './components/NodeConfigPanel';
 import KeyStatusPanel from './components/KeyStatusPanel';
 import { INITIAL_NODES, INITIAL_EDGES, APP_NAME } from './constants';
 import { FlowEngine } from './services/flowEngine';
-import { FlowSchema, LogEntry, NodeStatus, GeneratedFile, FlowNode, SavedProject, NodeType } from './types';
+import { storageService } from './services/storageService'; // NEW import
+import { FlowSchema, LogEntry, NodeStatus, GeneratedFile, FlowNode, SavedProject, NodeType, FlowEdge } from './types';
 
 const nodeTypes = {
   custom: CustomNode,
@@ -54,6 +56,7 @@ const App = () => {
   const [files, setFiles] = useState<GeneratedFile[]>([]);
   const [isExecuting, setIsExecuting] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const selectedNode = nodes.find(n => n.id === selectedNodeId) || null;
@@ -67,6 +70,7 @@ const App = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibraryOpen, setIsLibraryOpen] = useState(false); 
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
+  const [isJsonModalOpen, setIsJsonModalOpen] = useState(false); // NEW
 
   useEffect(() => {
     const saved = localStorage.getItem(AUTOSAVE_KEY);
@@ -128,6 +132,28 @@ const App = () => {
     setIsExecuting(false);
   }, [nodes, edges, isExecuting, setNodes]);
 
+  const handleSaveProject = () => {
+    setSaveStatus('saving');
+    
+    if (currentProject) {
+        // Update existing
+        storageService.updateProject(currentProject.id, nodes, edges, files);
+        setTimeout(() => setSaveStatus('saved'), 500);
+        setTimeout(() => setSaveStatus('idle'), 2000);
+    } else {
+        // Create new
+        const name = window.prompt("Nome do Projeto:", "Meu Fluxo Automático");
+        if (name) {
+            const newProj = storageService.saveProject(name, nodes, edges, files);
+            setCurrentProject({ id: newProj.id, name: newProj.name });
+            setSaveStatus('saved');
+            setTimeout(() => setSaveStatus('idle'), 2000);
+        } else {
+            setSaveStatus('idle');
+        }
+    }
+  };
+
   const handleLoadProject = (project: SavedProject) => {
     setNodes(project.nodes.map(n => ({ ...n, type: 'custom' })));
     setEdges(project.edges.map(e => ({ ...e, ...defaultEdgeOptions })));
@@ -136,11 +162,17 @@ const App = () => {
     setActiveTab('flow');
   };
 
+  const handleImportJson = (newNodes: FlowNode[], newEdges: FlowEdge[]) => {
+      setNodes(newNodes.map(n => ({ ...n, type: 'custom' })));
+      setEdges(newEdges.map(e => ({ ...e, ...defaultEdgeOptions })));
+      setActiveTab('flow');
+  };
+
   return (
     <ReactFlowProvider>
       <div className="flex h-[100dvh] w-screen overflow-hidden flex-col bg-gray-950 text-white select-none">
         
-        {/* HEADER - RESPONSIVO E AMPLIADO PARA TOQUE */}
+        {/* HEADER - RESPONSIVO */}
         <header className="h-14 bg-gray-900 border-b border-gray-800 flex items-center justify-between px-3 md:px-4 shrink-0 z-40 shadow-xl pt-[env(safe-area-inset-top)]">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-black text-sm shadow-lg shadow-blue-900/20">F</div>
@@ -150,24 +182,51 @@ const App = () => {
             </div>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
              <div className="hidden md:block">
                  <KeyStatusPanel />
              </div>
              
-             {/* BOTÃO DE CONFIGURAÇÕES (API KEY) - AUMENTADO */}
+             {/* BOTÃO JSON / CÓDIGO */}
              <button 
-                onClick={() => setIsSettingsOpen(true)}
-                className="flex items-center justify-center w-10 h-10 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors border border-gray-700 shadow-md active:scale-95"
-                title="Configurações (API Keys)"
+                onClick={() => setIsJsonModalOpen(true)}
+                className="flex items-center justify-center w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors border border-gray-700 shadow-md active:scale-95"
+                title="Ver/Editar JSON"
              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
              </button>
 
+             {/* BOTÃO SAVE */}
+             <button 
+                onClick={handleSaveProject}
+                className={`flex items-center justify-center w-9 h-9 md:w-10 md:h-10 rounded-xl transition-all border shadow-md active:scale-95 ${
+                    saveStatus === 'saved' ? 'bg-green-600 text-white border-green-500' :
+                    saveStatus === 'saving' ? 'bg-blue-800 text-blue-300 border-blue-700' :
+                    'bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white border-gray-700'
+                }`}
+                title="Salvar Projeto"
+             >
+                {saveStatus === 'saved' ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
+                )}
+             </button>
+
+             {/* BOTÃO SETTINGS */}
+             <button 
+                onClick={() => setIsSettingsOpen(true)}
+                className="flex items-center justify-center w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition-colors border border-gray-700 shadow-md active:scale-95"
+                title="Configurações (API Keys)"
+             >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+             </button>
+
+             {/* BOTÃO RUN */}
              <button 
                 onClick={handleRunFlow} 
                 disabled={isExecuting}
-                className={`flex items-center justify-center w-10 h-10 rounded-xl transition-all ${isExecuting ? 'bg-blue-900/50 animate-pulse' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/40 active:scale-90'}`}
+                className={`flex items-center justify-center w-9 h-9 md:w-10 md:h-10 rounded-xl transition-all ${isExecuting ? 'bg-blue-900/50 animate-pulse' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-900/40 active:scale-90'}`}
              >
                 {isExecuting ? <div className="w-4 h-4 border-2 border-white border-t-transparent animate-spin rounded-full"></div> : <svg className="w-5 h-5 fill-white" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 001.664l-3-2z"/></svg>}
              </button>
@@ -263,6 +322,7 @@ const App = () => {
         <NodeConfigPanel node={selectedNode} isOpen={!!selectedNode} onClose={() => setSelectedNodeId(null)} onUpdate={(id, cfg) => setNodes(nds => nds.map(n => n.id === id ? {...n, data: {...n.data, config: cfg}} : n))} onDelete={id => setNodes(nds => nds.filter(n => n.id !== id))} onDuplicate={() => {}} />
         <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
         <ProjectLibraryModal isOpen={isLibraryOpen} onClose={() => setIsLibraryOpen(false)} onLoadProject={handleLoadProject} currentNodesCount={nodes.length} activeProjectId={currentProject?.id} />
+        <FlowJsonModal isOpen={isJsonModalOpen} onClose={() => setIsJsonModalOpen(false)} nodes={nodes} edges={edges} onImport={handleImportJson} />
       </div>
     </ReactFlowProvider>
   );
