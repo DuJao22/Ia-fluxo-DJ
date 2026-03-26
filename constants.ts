@@ -118,4 +118,6 @@ Use exatamente esta estrutura:
 4. Se o usuário pedir para usar IA/Gemini no fluxo, use a URL:
    \`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={YOUR_API_KEY}\`
    E método POST com body: \`{ "contents": [{ "parts": [{ "text": "SEU PROMPT AQUI" }] }] }\`
+5. Para usar o resultado de um node anterior (como o texto gerado pelo Gemini) no body ou url de um httpRequest, use a sintaxe de interpolação: \`{{input.text}}\` (para pegar o texto do Gemini) ou \`{{input.nome_do_campo}}\` para outros JSONs.
+   Exemplo de body enviando o HTML gerado pelo Gemini: \`{ "name": "Meu Site", "html": "{{input.text}}" }\`
 `;

@@ -21,6 +21,7 @@ import ProjectLibraryModal from './components/ProjectLibraryModal';
 import FlowJsonModal from './components/FlowJsonModal'; 
 import NodeConfigPanel from './components/NodeConfigPanel';
 import KeyStatusPanel from './components/KeyStatusPanel';
+import LandingPage from './components/LandingPage';
 import { INITIAL_NODES, INITIAL_EDGES, APP_NAME } from './constants';
 import { FlowEngine } from './services/flowEngine';
 import { storageService } from './services/storageService'; 
@@ -76,13 +77,14 @@ const App = () => {
   const [isLibraryOpen, setIsLibraryOpen] = useState(false); 
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [isJsonModalOpen, setIsJsonModalOpen] = useState(false); 
+  const [showLandingPage, setShowLandingPage] = useState(true);
 
   useEffect(() => {
     const saved = localStorage.getItem(AUTOSAVE_KEY);
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (parsed.nodes) {
+        if (parsed.nodes && parsed.nodes.length > 0) {
           setNodes(parsed.nodes);
           setEdges(parsed.edges || []);
           setFiles(parsed.files || []);
@@ -176,6 +178,10 @@ const App = () => {
       setEdges(newEdges.map(e => ({ ...e, ...defaultEdgeOptions })));
       setActiveTab('flow');
   };
+
+  if (showLandingPage) {
+    return <LandingPage onStart={() => setShowLandingPage(false)} />;
+  }
 
   return (
     <ReactFlowProvider>

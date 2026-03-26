@@ -101,6 +101,65 @@ export class FlowEngine {
     }
   }
 
+  private resolvePath(path: string): any {
+      const normalizedPath = path.trim().replace(/\[(\w+)\]/g, '.$1');
+      const keys = normalizedPath.split('.').filter(Boolean);
+      let current: any = this.context;
+      
+      if (keys[0] === 'input') {
+          current = this.context['input'];
+          keys.shift();
+          
+          // Helper for Gemini responses
+          if (keys.length === 1 && (keys[0] === 'text' || keys[0] === 'gemini_text')) {
+              if (current?.candidates?.[0]?.content?.parts?.[0]?.text) {
+                  let text = current.candidates[0].content.parts[0].text;
+                  // Remove markdown code blocks if present (e.g., ```html ... ```)
+                  const match = text.match(/```[\w]*\n([\s\S]*?)\n```/);
+                  if (match) {
+                      text = match[1];
+                  }
+                  return text;
+              }
+          }
+      }
+      
+      for (const key of keys) {
+          if (current === undefined || current === null) return undefined;
+          current = current[key];
+      }
+      return current;
+  }
+
+  private interpolate(value: any): any {
+    if (typeof value === 'string') {
+      const exactMatch = value.match(/^\{\{([^}]+)\}\}$/);
+      if (exactMatch) {
+          const resolved = this.resolvePath(exactMatch[1]);
+          return resolved !== undefined ? resolved : value;
+      }
+
+      return value.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
+        const resolved = this.resolvePath(path);
+        if (resolved === undefined || resolved === null) return '';
+        return typeof resolved === 'object' ? JSON.stringify(resolved) : String(resolved);
+      });
+    }
+    
+    if (typeof value === 'object' && value !== null) {
+      if (Array.isArray(value)) {
+        return value.map(v => this.interpolate(v));
+      }
+      const result: any = {};
+      for (const [k, v] of Object.entries(value)) {
+        result[k] = this.interpolate(v);
+      }
+      return result;
+    }
+    
+    return value;
+  }
+
   private async executeNode(node: FlowNode): Promise<boolean> {
     let { type, config, label } = node.data;
     if (!type && node.type) type = node.type as NodeType;
@@ -117,21 +176,51 @@ export class FlowEngine {
               break;
 
           case NodeType.HTTP_REQUEST:
-            let url = config?.url;
+            let url = this.interpolate(config?.url);
             if (!url) throw new Error("URL não definida no nó.");
 
             const method = (config?.method || 'GET').toUpperCase();
-            const body = config?.body ? (typeof config.body === 'string' ? JSON.parse(config.body) : config.body) : undefined;
+            
+            let rawBody = config?.body;
+            let parsedBody: any = undefined;
+            if (rawBody) {
+                if (typeof rawBody === 'string') {
+                    try {
+                        parsedBody = JSON.parse(rawBody);
+                    } catch (e) {
+                        parsedBody = rawBody;
+                    }
+                } else {
+                    parsedBody = rawBody;
+                }
+            }
+            
+            const body = this.interpolate(parsedBody);
+            
+            let headers: any = { 'Content-Type': 'application/json' };
+            if (config?.headers) {
+                let parsedHeaders = config.headers;
+                if (typeof parsedHeaders === 'string') {
+                    try { parsedHeaders = JSON.parse(parsedHeaders); } catch(e) {}
+                }
+                if (typeof parsedHeaders === 'object') {
+                    headers = { ...headers, ...this.interpolate(parsedHeaders) };
+                }
+            }
             
             const responseData = await this.fetchWithRetry(url, { 
                 method, 
-                headers: { 'Content-Type': 'application/json' }, 
-                body: method !== 'GET' ? JSON.stringify(body) : undefined 
+                headers, 
+                body: method !== 'GET' ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined 
             }, node.id, label);
             
             this.context[node.id] = responseData;
             this.context['input'] = responseData; 
             this.addLog(createLog(node.id, label, 'SUCCESS', `📦 Requisição concluída.`));
+            
+            if (responseData && typeof responseData === 'object' && responseData.url) {
+                this.addLog(createLog(node.id, label, 'SUCCESS', `🔗 URL Retornada: ${responseData.url}`));
+            }
             break;
 
           case NodeType.IF_CONDITION:

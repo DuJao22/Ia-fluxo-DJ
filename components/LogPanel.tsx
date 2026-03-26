@@ -41,6 +41,28 @@ const LogPanel: React.FC<LogPanelProps> = ({ logs, isOpen = true, onToggle }) =>
       }
   };
 
+  const renderMessage = (message: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = message.split(urlRegex);
+    return parts.map((part, i) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {part}
+          </a>
+        );
+      }
+      return part;
+    });
+  };
+
   return (
     <div className="h-full bg-[#0a0c10] border-t border-gray-700 flex flex-col font-mono text-xs w-full shadow-inner">
       <div 
@@ -103,7 +125,7 @@ const LogPanel: React.FC<LogPanelProps> = ({ logs, isOpen = true, onToggle }) =>
                         'border-gray-800 border-l-gray-600 bg-gray-900/50'
                     }`}>
                         <pre className="text-gray-300 whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed selection:bg-blue-500/30 font-medium">
-                            {log.message}
+                            {renderMessage(log.message)}
                         </pre>
                     </div>
                 </div>
