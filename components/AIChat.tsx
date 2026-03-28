@@ -20,6 +20,7 @@ const AIChat: React.FC<AIChatProps> = ({ onImportFlow, logs, nodes, edges }) => 
   ]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Auto-scroll inteligente
   useEffect(() => {
@@ -31,6 +32,9 @@ const AIChat: React.FC<AIChatProps> = ({ onImportFlow, logs, nodes, edges }) => 
     const userMsg: AIMessage = { role: 'user', content: input, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     setLoading(true);
 
     try {
@@ -108,19 +112,29 @@ const AIChat: React.FC<AIChatProps> = ({ onImportFlow, logs, nodes, edges }) => 
 
       {/* Input Area - Fixo no Rodapé e Seguro para Mobile */}
       <div className="shrink-0 p-3 bg-gray-900 border-t border-gray-800 z-30 pb-[max(12px,env(safe-area-inset-bottom))] shadow-[0_-5px_15px_rgba(0,0,0,0.3)]">
-        <div className="flex gap-2 bg-gray-950 p-2 border border-gray-700 rounded-2xl focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all">
-          <input
-            type="text" 
+        <div className="flex gap-2 bg-gray-950 p-2 border border-gray-700 rounded-2xl focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/50 transition-all items-end">
+          <textarea
+            ref={textareaRef}
             value={input} 
-            onChange={(e) => setInput(e.target.value)} 
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${Math.min(e.target.scrollHeight, window.innerHeight * 0.5)}px`;
+            }} 
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
             placeholder="Descreva o fluxo desejado..."
-            className="flex-1 bg-transparent px-2 py-1 text-white text-[16px] focus:outline-none placeholder-gray-500" // 16px evita zoom no iOS
+            rows={1}
+            className="flex-1 bg-transparent px-2 py-2 text-white text-[16px] focus:outline-none placeholder-gray-500 resize-none max-h-[50vh] overflow-y-auto custom-scrollbar"
           />
           <button 
             onClick={handleSend} 
             disabled={loading || !input.trim()} 
-            className="bg-blue-600 hover:bg-blue-500 text-white w-10 h-10 md:w-10 md:h-10 flex items-center justify-center rounded-xl shadow-lg active:scale-90 transition-all disabled:opacity-50 disabled:bg-gray-800 disabled:scale-100 shrink-0"
+            className="bg-blue-600 hover:bg-blue-500 text-white w-10 h-10 md:w-10 md:h-10 flex items-center justify-center rounded-xl shadow-lg active:scale-90 transition-all disabled:opacity-50 disabled:bg-gray-800 disabled:scale-100 shrink-0 mb-1"
           >
             {loading ? (
                  <div className="w-4 h-4 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>

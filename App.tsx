@@ -333,13 +333,13 @@ const App = () => {
 
           {/* SIDEBAR CHAT (DESKTOP) */}
           {showDesktopChat && (
-              <div className="hidden md:flex flex-none w-[380px] bg-gray-950 border-l border-gray-800 z-30 flex-col shadow-2xl">
+              <div className="hidden md:flex flex-none w-[380px] bg-gray-950 border-l border-gray-800 z-30 flex-col shadow-2xl overflow-hidden">
                    <AIChat onImportFlow={handleLoadProject} logs={logs} nodes={nodes} edges={edges} />
               </div>
           )}
 
           {/* VIEWS MOBILE (Chat & Terminal - Substitui a view Desktop quando ativo) */}
-          <div className={`md:hidden flex-1 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
+          <div className={`md:hidden flex-1 overflow-hidden ${activeTab === 'chat' ? 'flex flex-col' : 'hidden'}`}>
              <AIChat onImportFlow={handleLoadProject} logs={logs} nodes={nodes} edges={edges} />
           </div>
           <div className={`md:hidden flex-1 ${activeTab === 'terminal' ? 'block' : 'hidden'}`}>
